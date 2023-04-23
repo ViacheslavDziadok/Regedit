@@ -129,11 +129,13 @@
   <ItemGroup>
     <ClInclude Include="CourseWork-Regedit.h" />
     <ClInclude Include="framework.h" />
+    <ClInclude Include="regedit.hpp" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CourseWork-Regedit.cpp" />
+    <ClCompile Include="example.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="CourseWork-Regedit.rc" />
