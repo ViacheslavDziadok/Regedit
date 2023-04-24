@@ -24,6 +24,7 @@
     <ProjectGuid>{9b848bb5-7c78-4c3b-9dce-28858917b22d}</ProjectGuid>
     <RootNamespace>CourseWorkRegedit</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>Regedit</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -127,23 +128,23 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="CourseWork-Regedit.h" />
+    <ClInclude Include="Regedit.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="regedit.hpp" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CourseWork-Regedit.cpp" />
+    <ClCompile Include="Regedit.cpp" />
     <ClCompile Include="example.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="CourseWork-Regedit.rc" />
+    <ResourceCompile Include="Regedit.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="CourseWork-Regedit.ico" />
+    <Image Include="Regedit.ico" />
     <Image Include="small.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
