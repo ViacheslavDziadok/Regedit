@@ -135,7 +135,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CourseWork-Regedit.cpp" />
-    <ClCompile Include="example.cpp" />
+    <ClCompile Include="example.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="CourseWork-Regedit.rc" />

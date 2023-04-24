@@ -1,7 +1,7 @@
 #pragma once
 
-#ifndef __NEO_REGEDIT_HPP__
-#define __NEO_REGEDIT_HPP__
+#ifndef __AA_REGEDIT_HPP__
+#define __AA_REGEDIT_HPP__
 
 
 /*
@@ -9,14 +9,14 @@
 	Author: neo3587
 	Notes:
 		- Requires C++11 or higher
-		- Some keys are redirections to another keys due to registry virtualization : https://docs.microsoft.com/es-es/windows/desktop/SysInfo/registry-virtualization
+		- Some keys are redirections to another keys due to registry virtualization : https://docs.microsoft.com/ru-ru/windows/desktop/SysInfo/registry-virtualization
 		- Some keys cannot be opened with write permissions
-		- resource_list, full_resource_descriptor and resource_requirements_list types are part of the WDK : https://docs.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk,
+		- resource_list, full_resource_descriptor and resource_requirements_list types are part of the WDK : https://docs.microsoft.com/ru-ru/windows-hardware/drivers/download-the-wdk,
 			all these types requires a cast to the expected structure type defined on wdm.h :
-				+ resource_list              : https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/content/wdm/ns-wdm-_cm_resource_list
-				+ full_resource_descriptor   : https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/content/wdm/ns-wdm-_cm_full_resource_descriptor
-				+ resoruce_requeriments_list : https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/content/wdm/ns-wdm-_io_resource_requirements_list
-		- Be careful with what you're going to do, you may make a mess if you edit or delete some keys or values, always make a backup if you want to try 'weird things' : https://support.microsoft.com/en-us/help/322756/how-to-back-up-and-restore-the-registry-in-windows
+				+ resource_list              : https://docs.microsoft.com/ru-ru/windows-hardware/drivers/ddi/content/wdm/ns-wdm-_cm_resource_list
+				+ full_resource_descriptor   : https://docs.microsoft.com/ru-ru/windows-hardware/drivers/ddi/content/wdm/ns-wdm-_cm_full_resource_descriptor
+				+ resoruce_requeriments_list : https://docs.microsoft.com/ru-ru/windows-hardware/drivers/ddi/content/wdm/ns-wdm-_io_resource_requirements_list
+		- Be careful with what you're going to do, you may make a mess if you edit or delete some keys or values, always make a backup if you want to try 'weird things' : https://support.microsoft.com/ru-ru/help/322756/how-to-back-up-and-restore-the-registry-in-windows
 */
 
 
@@ -32,7 +32,7 @@
 
 
 
-namespace neo {
+namespace aa {
 
 	namespace __regedit_details {
 
@@ -288,7 +288,7 @@ namespace neo {
 
 		public:
 
-			// https://docs.microsoft.com/es-es/windows/desktop/SysInfo/registry-functions
+			// https://docs.microsoft.com/ru-ru/windows/desktop/SysInfo/registry-functions
 
 			// Member Types:
 
