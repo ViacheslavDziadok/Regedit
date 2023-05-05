@@ -13,6 +13,9 @@ HINSTANCE hInst;                                // текущий экземпл
 WCHAR szTitle[MAX_LOADSTRING];                  // Текст строки заголовка
 WCHAR szWindowClass[MAX_LOADSTRING];            // имя класса главного окна
 
+string hCurrentHKEY = "HKEY_CURRENT_USER";
+string sCurrentWorkingDirectory = hCurrentHKEY + "\\Software";
+
 // Отправить объявления функций, включенных в этот модуль кода:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
@@ -83,6 +86,63 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
     return RegisterClassExW(&wcex);
 }
 
+// tree view
+HTREEITEM AddTreeViewItem(HWND hTreeView, HTREEITEM hParent, const std::string& text)
+{
+    TVINSERTSTRUCT tvInsert;
+    tvInsert.hParent = hParent;
+    tvInsert.hInsertAfter = TVI_LAST;
+    tvInsert.item.mask = TVIF_TEXT;
+    std::wstring wtext(text.begin(), text.end());
+    tvInsert.item.pszText = const_cast<LPWSTR>(wtext.c_str());
+
+    return (HTREEITEM)SendMessage(hTreeView, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
+}
+
+void PopulateTreeView(HWND hTreeView, HTREEITEM hParent, HKEY hKey, const std::string& path)
+{
+    aa::regedit reg(hKey, path);
+    auto subkeys = reg.EnumSubKeys(hKey, path);
+
+    for (const auto& subkey : subkeys)
+    {
+        HTREEITEM hItem = AddTreeViewItem(hTreeView, hParent, subkey);
+
+        std::string newPath = path + "\\" + subkey;
+        PopulateTreeView(hTreeView, hItem, hKey, newPath);
+    }
+}
+
+void DisplayRegistryTree(HINSTANCE hInstance, HWND hWnd)
+{
+    // Initialize the TreeView control
+    HWND hTreeView = CreateWindowW(WC_TREEVIEW, L"", WS_CHILD | WS_VISIBLE | TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT | WS_BORDER,
+        200, 400, 400, 225, hWnd, NULL, hInstance, NULL);
+
+    // Add HKEYs as root items
+    HTREEITEM hKeyRoots[] = {
+        AddTreeViewItem(hTreeView, nullptr, "HKEY_CLASSES_ROOT"),
+        AddTreeViewItem(hTreeView, nullptr, "HKEY_CURRENT_USER"),
+        AddTreeViewItem(hTreeView, nullptr, "HKEY_LOCAL_MACHINE"),
+        AddTreeViewItem(hTreeView, nullptr, "HKEY_USERS"),
+        AddTreeViewItem(hTreeView, nullptr, "HKEY_CURRENT_CONFIG")
+    };
+
+    // Populate the TreeView control with the HKEYs and their paths
+    HKEY hKeyHandles[] = {
+        HKEY_CLASSES_ROOT,
+        HKEY_CURRENT_USER,
+        HKEY_LOCAL_MACHINE,
+        HKEY_USERS,
+        HKEY_CURRENT_CONFIG
+    };
+
+    for (int i = 0; i < sizeof(hKeyRoots) / sizeof(hKeyRoots[0]); ++i)
+    {
+        PopulateTreeView(hTreeView, hKeyRoots[i], hKeyHandles[i], "");
+    }
+}
+
 //
 //   ФУНКЦИЯ: InitInstance(HINSTANCE, int)
 //
@@ -143,12 +203,10 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    SendMessage(hWndEditRights, CB_SETCURSEL, 1, 0);
 
    // Create the TreeView control
-   HWND hTreeView = CreateWindowW(WC_TREEVIEW, L"", WS_CHILD | WS_VISIBLE | TVS_HASLINES | TVS_LINESATROOT | TVS_HASBUTTONS | WS_BORDER,
-       200, 400, 400, 225, hWnd, NULL, hInstance, NULL);
    HWND hListBox = CreateWindowW(L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | LBS_NOTIFY | LBS_WANTKEYBOARDINPUT,
        	   625, 400, 350, 235, hWnd, NULL, hInstance, NULL);
-
-
+   DisplayRegistryTree(hInstance, hWnd);
+   /*
    // Create some tree nodes
    TVINSERTSTRUCT tvInsert;
    tvInsert.hParent = TVI_ROOT; // add nodes to the root of the tree
@@ -191,6 +249,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    // Set the parent window of the TreeView control
    SetParent(hTreeView, hWnd);
+   */
 
    testValues();
 
@@ -201,6 +260,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
+   
 
    return TRUE;
 }
@@ -219,6 +279,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
+    case WM_CREATE:
+        {
+        }
+        break;
     case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);

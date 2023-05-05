@@ -817,6 +817,37 @@ namespace aa {
 			const std::pair<std::string, regedit> operator[](size_t pos) const {
 				return const_cast<regedit&>(*this).operator[](pos);
 			}
+			std::vector<std::string> EnumSubKeys(HKEY hKey, const std::string& path)
+			{
+				HKEY hOpenedKey;
+				if (RegOpenKeyExA(hKey, path.c_str(), 0, KEY_READ, &hOpenedKey) != ERROR_SUCCESS)
+				{
+					return {};
+				}
+
+				DWORD dwSubKeyCount;
+				if (RegQueryInfoKey(hOpenedKey, nullptr, nullptr, nullptr, &dwSubKeyCount, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS)
+				{
+					RegCloseKey(hOpenedKey);
+					return {};
+				}
+
+				std::vector<std::string> subkeys;
+				char szName[MAX_PATH];
+				DWORD dwNameSize = MAX_PATH;
+
+				for (DWORD i = 0; i < dwSubKeyCount; ++i)
+				{
+					dwNameSize = MAX_PATH;
+					if (RegEnumKeyExA(hOpenedKey, i, szName, &dwNameSize, nullptr, nullptr, nullptr, nullptr) == ERROR_SUCCESS)
+					{
+						subkeys.push_back(szName);
+					}
+				}
+
+				RegCloseKey(hOpenedKey);
+				return subkeys;
+			}
 
 			// Capacity:
 
