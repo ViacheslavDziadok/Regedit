@@ -226,10 +226,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 tvInsert.item.iImage = 0;
                 tvInsert.item.iSelectedImage = 0;
                 HTREEITEM hRoot = (HTREEITEM)SendMessage(hwndTV, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
-                SendMessage(hwndTV, TVM_EXPAND, TVE_EXPAND, (LPARAM)hRoot);
+                // SendMessage(hwndTV, TVM_EXPAND, TVE_EXPAND, (LPARAM)hRoot);
             }
         }
-            break;
+        break;
         case WM_NOTIFY:
         {
             LPNMHDR pnmhdr = (LPNMHDR)lParam;
@@ -245,7 +245,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
 
                 TVITEMEX tvItem;
-                tvItem.mask = TVIF_CHILDREN;
+                tvItem.mask = TVIF_CHILDREN | TVIF_PARAM;
                 tvItem.hItem = hItem;
                 SendMessage(hwndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
 
@@ -290,12 +290,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     HKEY hKey;
                     if (RegOpenKeyExW(hParentKey, L"", 0, KEY_ENUMERATE_SUB_KEYS, &hKey) == ERROR_SUCCESS)
                     {
-                        // Delete existing child nodes
+                        // If child nodes already displayed, skip loading
                         HTREEITEM hChildItem = (HTREEITEM)SendMessage(hwndTV, TVM_GETNEXTITEM, TVGN_CHILD, (LPARAM)hItem);
-                        while (hChildItem)
+                        if (hChildItem)
                         {
-                            SendMessage(hwndTV, TVM_DELETEITEM, 0, (LPARAM)hChildItem);
-                            hChildItem = (HTREEITEM)SendMessage(hwndTV, TVM_GETNEXTITEM, TVGN_CHILD, (LPARAM)hItem);
+                            break;
                         }
 
                         // Enumerate subkeys
@@ -329,8 +328,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     }
                 }
             }
-            break;
         }
+        break;
         case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);
@@ -347,7 +346,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     return DefWindowProc(hWnd, message, wParam, lParam);
             }
         }
-            break;
+        break;
         case WM_PAINT:
         {
             PAINTSTRUCT ps;
@@ -355,10 +354,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // TODO: Добавьте сюда любой код прорисовки, использующий HDC...
             EndPaint(hWnd, &ps);
         }
-            break;
+        break;
         case WM_DESTROY:
             PostQuitMessage(0);
-            break;
+        break;
         default:
             return DefWindowProc(hWnd, message, wParam, lParam);
         }
