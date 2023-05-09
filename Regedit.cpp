@@ -8,11 +8,15 @@
 #include <thread>
 
 #define MAX_LOADSTRING 100
+#define MAX_ROOT_KEY_LENGTH 20
+#define MAX_KEY_LENGTH 255
+#define MAX_VALUE_NAME 16383
 
 // Глобальные переменные:
 HINSTANCE hInst;                                // текущий экземпляр
 WCHAR szTitle[MAX_LOADSTRING];                  // Текст строки заголовка
 WCHAR szWindowClass[MAX_LOADSTRING];            // имя класса главного окна
+HWND hwndTV;
 
 string hCurrentHKEY = "HKEY_CURRENT_USER";
 string sCurrentWorkingDirectory = hCurrentHKEY + "\\Software";
@@ -87,169 +91,6 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
     return RegisterClassExW(&wcex);
 }
 
-// tree view
-HTREEITEM AddTreeViewItem(HWND hTreeView, HTREEITEM hParent, const std::string& text)
-{
-    TVINSERTSTRUCT tvInsert;
-    tvInsert.hParent = hParent;
-    tvInsert.hInsertAfter = TVI_LAST;
-    tvInsert.item.mask = TVIF_TEXT;
-    std::wstring wtext(text.begin(), text.end());
-    tvInsert.item.pszText = const_cast<LPWSTR>(wtext.c_str());
-
-    return (HTREEITEM)SendMessage(hTreeView, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
-}
-
-void PopulateTreeViewItem(HWND hTreeView, HTREEITEM hParent, HKEY hKey)
-{
-    // Enumerate the child keys of the parent key
-    aa::regedit reg(hKey, "");
-    auto subkeys = reg.EnumSubKeys(hKey, "");
-
-    // Add the child keys to the tree view
-    for (const auto& subkey : subkeys)
-    {
-        AddTreeViewItem(hTreeView, hParent, subkey);
-    }
-}
-
-LRESULT OnTreeViewItemExpanding(HWND hWnd, WPARAM wParam, LPARAM lParam)
-{
-    LPNMTREEVIEW lpnmTreeView = (LPNMTREEVIEW)lParam;
-    HTREEITEM hItem = lpnmTreeView->itemNew.hItem;
-    TVITEM tvItem;
-    tvItem.mask = TVIF_HANDLE | TVIF_STATE;
-    tvItem.hItem = hItem;
-    tvItem.stateMask = TVIS_EXPANDEDONCE;
-
-    if (!TreeView_GetItem(hWnd, &tvItem) || !(tvItem.state & TVIS_EXPANDEDONCE))
-    {
-        // Populate child items of the expanding item
-        PopulateTreeViewItem(hWnd, hItem, (HKEY)lpnmTreeView->itemNew.lParam);
-        // Set the TVIS_EXPANDEDONCE state of the item to indicate that the item has been expanded once
-        tvItem.state |= TVIS_EXPANDEDONCE;
-        TreeView_SetItem(hWnd, &tvItem);
-    }
-
-    return 0;
-}
-
-void PopulateTreeView(HWND hTreeView)
-{
-    // Add HKEYs as root items
-    HTREEITEM hKeyRoots[] = {
-        AddTreeViewItem(hTreeView, nullptr, "HKEY_CLASSES_ROOT"),
-        AddTreeViewItem(hTreeView, nullptr, "HKEY_CURRENT_USER"),
-        AddTreeViewItem(hTreeView, nullptr, "HKEY_LOCAL_MACHINE"),
-        AddTreeViewItem(hTreeView, nullptr, "HKEY_USERS"),
-        AddTreeViewItem(hTreeView, nullptr, "HKEY_CURRENT_CONFIG")
-    };
-}
-LRESULT CALLBACK TreeViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
-{
-    switch (uMsg)
-    {
-    case WM_NOTIFY:
-    {
-        LPNMHDR lpnmhdr = (LPNMHDR)lParam;
-        switch (lpnmhdr->code)
-        {
-        case TVN_ITEMEXPANDING:
-        {
-            LPNMTREEVIEW lpnmTreeView = (LPNMTREEVIEW)lParam;
-            HTREEITEM hItem = lpnmTreeView->itemNew.hItem;
-
-            // Check if the item has already been expanded
-            TVITEMEX tvItem;
-            tvItem.hItem = hItem;
-            tvItem.mask = TVIF_STATEEX;
-            TreeView_GetItem(hWnd, &tvItem);
-
-            if (!(tvItem.uStateEx == TVIS_EXPANDPARTIAL) && !(tvItem.uStateEx == TVIS_EXPANDEDONCE))
-            {
-                // Mark the item as partially expanded to prevent double-clicks
-                tvItem.uStateEx = TVIS_EXPANDPARTIAL;
-                TreeView_SetItem(hWnd, &tvItem);
-
-                // Load the child items in a separate thread
-                auto threadFunc = [hWnd, hItem, lpnmTreeView]()
-                {
-                    PopulateTreeView(hWnd);
-
-                    // Mark the item as fully expanded
-                    TVITEMEX tvItem;
-                    tvItem.hItem = hItem;
-                    tvItem.mask = TVIF_STATEEX;
-                    TreeView_GetItem(hWnd, &tvItem);
-                    tvItem.uStateEx |= TVIS_EXPANDEDONCE;
-                    TreeView_SetItem(hWnd, &tvItem);
-                };
-                std::thread(threadFunc).detach();
-            }
-        }
-        break;
-        }
-    }
-    break;
-    }
-
-    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
-}
-
-
-void DisplayRegistryTree(HINSTANCE hInstance, HWND hWnd)
-{
-    // Initialize the TreeView control
-    HWND hTreeView = CreateWindowW(WC_TREEVIEW, L"", WS_CHILD | WS_VISIBLE | TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT | WS_BORDER,
-        200, 400, 400, 225, hWnd, NULL, hInstance, NULL);
-    SetWindowSubclass(hWnd, TreeViewSubclassProc, 0, 0);
-
-    // Populate the TreeView control with the root nodes
-    TVINSERTSTRUCT tvInsert;
-    tvInsert.hParent = TVI_ROOT;
-    tvInsert.hInsertAfter = TVI_LAST;
-    tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
-    tvInsert.item.pszText = LPWSTR(L"HKEY_CLASSES_ROOT");
-    tvInsert.item.cChildren = 1;
-    tvInsert.item.lParam = (LPARAM)HKEY_CLASSES_ROOT;
-    HTREEITEM hKeyClassesRoot = TreeView_InsertItem(hTreeView, &tvInsert);
-
-    tvInsert.hParent = TVI_ROOT;
-    tvInsert.hInsertAfter = TVI_LAST;
-    tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
-    tvInsert.item.pszText = LPWSTR(L"HKEY_CURRENT_USER");
-    tvInsert.item.cChildren = 1;
-    tvInsert.item.lParam = (LPARAM)HKEY_CURRENT_USER;
-    HTREEITEM hKeyCurrentUser = TreeView_InsertItem(hTreeView, &tvInsert);
-
-    tvInsert.hParent = TVI_ROOT;
-    tvInsert.hInsertAfter = TVI_LAST;
-    tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
-    tvInsert.item.pszText = LPWSTR(L"HKEY_LOCAL_MACHINE");
-    tvInsert.item.cChildren = 1;
-    tvInsert.item.lParam = (LPARAM)HKEY_LOCAL_MACHINE;
-    HTREEITEM hKeyLocalMachine = TreeView_InsertItem(hTreeView, &tvInsert);
-
-    tvInsert.hParent = TVI_ROOT;
-    tvInsert.hInsertAfter = TVI_LAST;
-    tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
-    tvInsert.item.pszText = LPWSTR(L"HKEY_USERS");
-    tvInsert.item.cChildren = 1;
-    tvInsert.item.lParam = (LPARAM)HKEY_USERS;
-    HTREEITEM hKeyUsers = TreeView_InsertItem(hTreeView, &tvInsert);
-
-    tvInsert.hParent = TVI_ROOT;
-    tvInsert.hInsertAfter = TVI_LAST;
-    tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
-    tvInsert.item.pszText = LPWSTR(L"HKEY_CURRENT_CONFIG");
-    tvInsert.item.cChildren = 1;
-    tvInsert.item.lParam = (LPARAM)HKEY_CURRENT_CONFIG;
-    HTREEITEM hKeyCurrentConfig = TreeView_InsertItem(hTreeView, &tvInsert);
-
-    // Subclass the TreeView control to intercept TVN_ITEMEXPANDING notifications
-    SetWindowSubclass(hTreeView, TreeViewSubclassProc, 0, 0);
-}
-
 //
 //   ФУНКЦИЯ: InitInstance(HINSTANCE, int)
 //
@@ -312,52 +153,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    // Create the TreeView control
    HWND hListBox = CreateWindowW(L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | LBS_NOTIFY | LBS_WANTKEYBOARDINPUT,
        	   625, 400, 350, 235, hWnd, NULL, hInstance, NULL);
-   DisplayRegistryTree(hInstance, hWnd);
-   /*
-   // Create some tree nodes
-   TVINSERTSTRUCT tvInsert;
-   tvInsert.hParent = TVI_ROOT; // add nodes to the root of the tree
-   tvInsert.hInsertAfter = TVI_LAST; // insert at the end of the list of siblings
-   tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
-   tvInsert.item.pszText = const_cast < wchar_t*>(L"Node 1"); // the text of the node
-   tvInsert.item.cChildren = 1; // the number of child nodes
-   tvInsert.item.lParam = (LPARAM)NULL; // the application-defined value
-   HTREEITEM hNode1 = (HTREEITEM)SendMessage(hTreeView, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
-
-   // add child nodes to Node 1
-   tvInsert.hParent = hNode1; // set the parent to Node 1
-   tvInsert.item.pszText = const_cast < wchar_t*>(L"Node 1.1");
-   tvInsert.item.cChildren = 0; // no child nodes
-   HTREEITEM hNode11 = (HTREEITEM)SendMessage(hTreeView, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
-
-   tvInsert.item.pszText = const_cast < wchar_t*>(L"Node 1.2");
-   tvInsert.item.cChildren = 1;
-   HTREEITEM hNode12 = (HTREEITEM)SendMessage(hTreeView, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
-
-   // add child nodes to Node 1.2
-   tvInsert.hParent = hNode12;
-   tvInsert.item.pszText = const_cast < wchar_t*>(L"Node 1.2.1");
-   tvInsert.item.cChildren = 0;
-   HTREEITEM hNode121 = (HTREEITEM)SendMessage(hTreeView, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
-
-   tvInsert.item.pszText = const_cast < wchar_t*>(L"Node 1.2.2");
-   tvInsert.item.cChildren = 0;
-   HTREEITEM hNode122 = (HTREEITEM)SendMessage(hTreeView, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
-
-   tvInsert.hParent = hNode1;
-   tvInsert.item.pszText = const_cast < wchar_t*>(L"Node 1.3");
-   tvInsert.item.cChildren = 0;
-   HTREEITEM hNode13 = (HTREEITEM)SendMessage(hTreeView, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
-
-   tvInsert.hParent = TVI_ROOT;
-   tvInsert.item.pszText = const_cast < wchar_t*>(L"Node 2");
-   tvInsert.item.cChildren = 0;
-   HTREEITEM hNode2 = (HTREEITEM)SendMessage(hTreeView, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
-
-   // Set the parent window of the TreeView control
-   SetParent(hTreeView, hWnd);
-   */
-
+   
    testValues();
 
    if (!hWnd)
@@ -386,41 +182,186 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
-    case WM_CREATE:
+        case WM_CREATE:
         {
+            // Create treeview control
+            hwndTV = CreateWindowEx(0, WC_TREEVIEW, L"", WS_VISIBLE | WS_CHILD | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_HASLINES | WS_BORDER, 200, 400, 400, 225, hWnd, (HMENU)100, GetModuleHandle(NULL), NULL);
+
+            // Set image list for treeview control
+            HIMAGELIST hImageList = ImageList_Create(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), ILC_COLOR32 | ILC_MASK, 1, 1);
+            HICON hIcon = LoadIcon(NULL, IDI_APPLICATION);
+            ImageList_AddIcon(hImageList, hIcon);
+            SendMessage(hwndTV, TVM_SETIMAGELIST, TVSIL_NORMAL, (LPARAM)hImageList);
+
+            // Set root items
+            for (int i = 0; i < 5; i++)
+            {
+                WCHAR szRootKey[MAX_ROOT_KEY_LENGTH];
+                switch (i)
+                {
+                case 0:
+                    lstrcpy(szRootKey, L"HKEY_CLASSES_ROOT");
+                    break;
+                case 1:
+                    lstrcpy(szRootKey, L"HKEY_CURRENT_USER");
+                    break;
+                case 2:
+                    lstrcpy(szRootKey, L"HKEY_LOCAL_MACHINE");
+                    break;
+                case 3:
+                    lstrcpy(szRootKey, L"HKEY_USERS");
+                    break;
+                case 4:
+                    lstrcpy(szRootKey, L"HKEY_CURRENT_CONFIG");
+                    break;
+                }
+
+                // Set root item
+                TVINSERTSTRUCT tvInsert;
+                tvInsert.hParent = NULL;
+                tvInsert.hInsertAfter = TVI_LAST;
+                tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
+                tvInsert.item.pszText = (LPWSTR)szRootKey;
+                tvInsert.item.cChildren = 1;
+                tvInsert.item.iImage = 0;
+                tvInsert.item.iSelectedImage = 0;
+                HTREEITEM hRoot = (HTREEITEM)SendMessage(hwndTV, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
+                SendMessage(hwndTV, TVM_EXPAND, TVE_EXPAND, (LPARAM)hRoot);
+            }
         }
-        break;
-    case WM_COMMAND:
+            break;
+        case WM_NOTIFY:
+        {
+            LPNMHDR pnmhdr = (LPNMHDR)lParam;
+            if (pnmhdr->idFrom == 100 && pnmhdr->code == TVN_ITEMEXPANDING)
+            {
+                LPNMTREEVIEW lpnmtv = (LPNMTREEVIEW)lParam;
+                HTREEITEM hItem = lpnmtv->itemNew.hItem;
+
+                if (lpnmtv->action == TVE_COLLAPSE)
+                {
+                    // do nothing when the item is collapsed
+                    break;
+                }
+
+                TVITEMEX tvItem;
+                tvItem.mask = TVIF_CHILDREN;
+                tvItem.hItem = hItem;
+                SendMessage(hwndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
+
+                if (tvItem.cChildren == 1)
+                {
+                    // Get the full path of the selected registry key
+                    WCHAR szKey[MAX_KEY_LENGTH];
+                    TVITEMEX tvItem;
+                    tvItem.mask = TVIF_TEXT;
+                    tvItem.hItem = hItem;
+                    tvItem.pszText = szKey;
+                    tvItem.cchTextMax = MAX_KEY_LENGTH;
+                    SendMessage(hwndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
+
+                    // Get the parent registry key
+                    HKEY hParentKey = (HKEY)tvItem.lParam;
+                    if (hParentKey == NULL) {
+                        // Open the selected registry key
+                        if (lstrcmpi(szKey, L"HKEY_CLASSES_ROOT") == 0)
+                        {
+                            hParentKey = HKEY_CLASSES_ROOT;
+                        }
+                        else if (lstrcmpi(szKey, L"HKEY_CURRENT_USER") == 0)
+                        {
+                            hParentKey = HKEY_CURRENT_USER;
+                        }
+                        else if (lstrcmpi(szKey, L"HKEY_LOCAL_MACHINE") == 0)
+                        {
+                            hParentKey = HKEY_LOCAL_MACHINE;
+                        }
+                        else if (lstrcmpi(szKey, L"HKEY_USERS") == 0)
+                        {
+                            hParentKey = HKEY_USERS;
+                        }
+                        else if (lstrcmpi(szKey, L"HKEY_CURRENT_CONFIG") == 0)
+                        {
+                            hParentKey = HKEY_CURRENT_CONFIG;
+                        }
+                    }
+
+                    // Open the selected registry key
+                    HKEY hKey;
+                    if (RegOpenKeyExW(hParentKey, L"", 0, KEY_ENUMERATE_SUB_KEYS, &hKey) == ERROR_SUCCESS)
+                    {
+                        // Delete existing child nodes
+                        HTREEITEM hChildItem = (HTREEITEM)SendMessage(hwndTV, TVM_GETNEXTITEM, TVGN_CHILD, (LPARAM)hItem);
+                        while (hChildItem)
+                        {
+                            SendMessage(hwndTV, TVM_DELETEITEM, 0, (LPARAM)hChildItem);
+                            hChildItem = (HTREEITEM)SendMessage(hwndTV, TVM_GETNEXTITEM, TVGN_CHILD, (LPARAM)hItem);
+                        }
+
+                        // Enumerate subkeys
+                        WCHAR szSubkey[MAX_KEY_LENGTH];
+                        DWORD dwIndex = 0;
+                        DWORD cchSubkey = MAX_KEY_LENGTH;
+                        while (RegEnumKeyEx(hKey, dwIndex, szSubkey, &cchSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
+                        {
+                            // Insert subkey into treeview
+                            TVINSERTSTRUCT tvInsert;
+                            tvInsert.hParent = hItem;
+                            tvInsert.hInsertAfter = TVI_LAST;
+                            tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
+                            tvInsert.item.pszText = szSubkey;
+                            tvInsert.item.cChildren = 1;
+                            tvInsert.item.iImage = 0;
+                            tvInsert.item.iSelectedImage = 0;
+                            SendMessage(hwndTV, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
+
+                            // Reset variables for next subkey
+                            dwIndex++;
+                            cchSubkey = MAX_KEY_LENGTH;
+                        }
+
+                        // Close registry key
+                        RegCloseKey(hKey);
+
+                        // Set cChildren to 0 to indicate that subkeys have already been loaded
+                        tvItem.cChildren = 0;
+                        SendMessage(hwndTV, TVM_SETITEM, 0, (LPARAM)&tvItem);
+                    }
+                }
+            }
+            break;
+        }
+        case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);
             // Разобрать выбор в меню:
             switch (wmId)
             {
-            case IDM_ABOUT:
-                DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-                break;
-            case IDM_EXIT:
-                DestroyWindow(hWnd);
-                break;
-            default:
-                return DefWindowProc(hWnd, message, wParam, lParam);
+                case IDM_ABOUT:
+                    DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
+                    break;
+                case IDM_EXIT:
+                    DestroyWindow(hWnd);
+                    break;
+                default:
+                    return DefWindowProc(hWnd, message, wParam, lParam);
             }
         }
-        break;
-    case WM_PAINT:
+            break;
+        case WM_PAINT:
         {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
             // TODO: Добавьте сюда любой код прорисовки, использующий HDC...
             EndPaint(hWnd, &ps);
         }
-        break;
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        break;
-    default:
-        return DefWindowProc(hWnd, message, wParam, lParam);
-    }
+            break;
+        case WM_DESTROY:
+            PostQuitMessage(0);
+            break;
+        default:
+            return DefWindowProc(hWnd, message, wParam, lParam);
+        }
     return 0;
 }
 
