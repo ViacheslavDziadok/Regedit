@@ -50,7 +50,7 @@ void createTests() {
 
 	aa::regedit reg(aa::regedit::hkey::current_user, "Software", true);
 
-	reg = reg["_test_key"];
+	reg = reg["1test_key"];
 
 	for (int i = 0; i < 10; i++)
 		reg.insert("key " + std::to_string(i));
@@ -160,10 +160,10 @@ int testValues() {
 	bool write_permission = true;
 	createTests();
 	findTestKey();
-	eraseValue(hkey, subkey, write_permission);
+	//eraseValue(hkey, subkey, write_permission);
 	setValue(hkey, subkey, write_permission);
 	findValue(hkey, subkey, write_permission);
-	eraseTestKey();
+	//eraseTestKey();
 	return 0;
 }
 

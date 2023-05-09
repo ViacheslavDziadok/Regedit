@@ -14,6 +14,8 @@
 #define IDD_SEARCH                              126
 #define IDC_REGEDIT                             127
 #define IDI_REGEDIT                             128
-#define IDC_TREEVIEW							129
+#define IDC_TREEVIEW							100
+#define IDC_LISTVIEW                            200
+#define IDC_MAIN_EDIT                           300
 #define IDM_SEARCH                              40000
 #define IDS_APP_TITLE                           40000
