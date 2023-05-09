@@ -5,6 +5,7 @@
 #include "Regedit.h"
 #include "example.cpp"
 #include <Commctrl.h>
+#include <thread>
 
 #define MAX_LOADSTRING 100
 
@@ -99,26 +100,42 @@ HTREEITEM AddTreeViewItem(HWND hTreeView, HTREEITEM hParent, const std::string& 
     return (HTREEITEM)SendMessage(hTreeView, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
 }
 
-void PopulateTreeView(HWND hTreeView, HTREEITEM hParent, HKEY hKey, const std::string& path)
+void PopulateTreeViewItem(HWND hTreeView, HTREEITEM hParent, HKEY hKey)
 {
-    aa::regedit reg(hKey, path);
-    auto subkeys = reg.EnumSubKeys(hKey, path);
+    // Enumerate the child keys of the parent key
+    aa::regedit reg(hKey, "");
+    auto subkeys = reg.EnumSubKeys(hKey, "");
 
+    // Add the child keys to the tree view
     for (const auto& subkey : subkeys)
     {
-        HTREEITEM hItem = AddTreeViewItem(hTreeView, hParent, subkey);
-
-        std::string newPath = path + "\\" + subkey;
-        PopulateTreeView(hTreeView, hItem, hKey, newPath);
+        AddTreeViewItem(hTreeView, hParent, subkey);
     }
 }
 
-void DisplayRegistryTree(HINSTANCE hInstance, HWND hWnd)
+LRESULT OnTreeViewItemExpanding(HWND hWnd, WPARAM wParam, LPARAM lParam)
 {
-    // Initialize the TreeView control
-    HWND hTreeView = CreateWindowW(WC_TREEVIEW, L"", WS_CHILD | WS_VISIBLE | TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT | WS_BORDER,
-        200, 400, 400, 225, hWnd, NULL, hInstance, NULL);
+    LPNMTREEVIEW lpnmTreeView = (LPNMTREEVIEW)lParam;
+    HTREEITEM hItem = lpnmTreeView->itemNew.hItem;
+    TVITEM tvItem;
+    tvItem.mask = TVIF_HANDLE | TVIF_STATE;
+    tvItem.hItem = hItem;
+    tvItem.stateMask = TVIS_EXPANDEDONCE;
 
+    if (!TreeView_GetItem(hWnd, &tvItem) || !(tvItem.state & TVIS_EXPANDEDONCE))
+    {
+        // Populate child items of the expanding item
+        PopulateTreeViewItem(hWnd, hItem, (HKEY)lpnmTreeView->itemNew.lParam);
+        // Set the TVIS_EXPANDEDONCE state of the item to indicate that the item has been expanded once
+        tvItem.state |= TVIS_EXPANDEDONCE;
+        TreeView_SetItem(hWnd, &tvItem);
+    }
+
+    return 0;
+}
+
+void PopulateTreeView(HWND hTreeView)
+{
     // Add HKEYs as root items
     HTREEITEM hKeyRoots[] = {
         AddTreeViewItem(hTreeView, nullptr, "HKEY_CLASSES_ROOT"),
@@ -127,20 +144,110 @@ void DisplayRegistryTree(HINSTANCE hInstance, HWND hWnd)
         AddTreeViewItem(hTreeView, nullptr, "HKEY_USERS"),
         AddTreeViewItem(hTreeView, nullptr, "HKEY_CURRENT_CONFIG")
     };
-
-    // Populate the TreeView control with the HKEYs and their paths
-    HKEY hKeyHandles[] = {
-        HKEY_CLASSES_ROOT,
-        HKEY_CURRENT_USER,
-        HKEY_LOCAL_MACHINE,
-        HKEY_USERS,
-        HKEY_CURRENT_CONFIG
-    };
-
-    for (int i = 0; i < sizeof(hKeyRoots) / sizeof(hKeyRoots[0]); ++i)
+}
+LRESULT CALLBACK TreeViewSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+{
+    switch (uMsg)
     {
-        PopulateTreeView(hTreeView, hKeyRoots[i], hKeyHandles[i], "");
+    case WM_NOTIFY:
+    {
+        LPNMHDR lpnmhdr = (LPNMHDR)lParam;
+        switch (lpnmhdr->code)
+        {
+        case TVN_ITEMEXPANDING:
+        {
+            LPNMTREEVIEW lpnmTreeView = (LPNMTREEVIEW)lParam;
+            HTREEITEM hItem = lpnmTreeView->itemNew.hItem;
+
+            // Check if the item has already been expanded
+            TVITEMEX tvItem;
+            tvItem.hItem = hItem;
+            tvItem.mask = TVIF_STATEEX;
+            TreeView_GetItem(hWnd, &tvItem);
+
+            if (!(tvItem.uStateEx == TVIS_EXPANDPARTIAL) && !(tvItem.uStateEx == TVIS_EXPANDEDONCE))
+            {
+                // Mark the item as partially expanded to prevent double-clicks
+                tvItem.uStateEx = TVIS_EXPANDPARTIAL;
+                TreeView_SetItem(hWnd, &tvItem);
+
+                // Load the child items in a separate thread
+                auto threadFunc = [hWnd, hItem, lpnmTreeView]()
+                {
+                    PopulateTreeView(hWnd);
+
+                    // Mark the item as fully expanded
+                    TVITEMEX tvItem;
+                    tvItem.hItem = hItem;
+                    tvItem.mask = TVIF_STATEEX;
+                    TreeView_GetItem(hWnd, &tvItem);
+                    tvItem.uStateEx |= TVIS_EXPANDEDONCE;
+                    TreeView_SetItem(hWnd, &tvItem);
+                };
+                std::thread(threadFunc).detach();
+            }
+        }
+        break;
+        }
     }
+    break;
+    }
+
+    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+}
+
+
+void DisplayRegistryTree(HINSTANCE hInstance, HWND hWnd)
+{
+    // Initialize the TreeView control
+    HWND hTreeView = CreateWindowW(WC_TREEVIEW, L"", WS_CHILD | WS_VISIBLE | TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT | WS_BORDER,
+        200, 400, 400, 225, hWnd, NULL, hInstance, NULL);
+    SetWindowSubclass(hWnd, TreeViewSubclassProc, 0, 0);
+
+    // Populate the TreeView control with the root nodes
+    TVINSERTSTRUCT tvInsert;
+    tvInsert.hParent = TVI_ROOT;
+    tvInsert.hInsertAfter = TVI_LAST;
+    tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
+    tvInsert.item.pszText = LPWSTR(L"HKEY_CLASSES_ROOT");
+    tvInsert.item.cChildren = 1;
+    tvInsert.item.lParam = (LPARAM)HKEY_CLASSES_ROOT;
+    HTREEITEM hKeyClassesRoot = TreeView_InsertItem(hTreeView, &tvInsert);
+
+    tvInsert.hParent = TVI_ROOT;
+    tvInsert.hInsertAfter = TVI_LAST;
+    tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
+    tvInsert.item.pszText = LPWSTR(L"HKEY_CURRENT_USER");
+    tvInsert.item.cChildren = 1;
+    tvInsert.item.lParam = (LPARAM)HKEY_CURRENT_USER;
+    HTREEITEM hKeyCurrentUser = TreeView_InsertItem(hTreeView, &tvInsert);
+
+    tvInsert.hParent = TVI_ROOT;
+    tvInsert.hInsertAfter = TVI_LAST;
+    tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
+    tvInsert.item.pszText = LPWSTR(L"HKEY_LOCAL_MACHINE");
+    tvInsert.item.cChildren = 1;
+    tvInsert.item.lParam = (LPARAM)HKEY_LOCAL_MACHINE;
+    HTREEITEM hKeyLocalMachine = TreeView_InsertItem(hTreeView, &tvInsert);
+
+    tvInsert.hParent = TVI_ROOT;
+    tvInsert.hInsertAfter = TVI_LAST;
+    tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
+    tvInsert.item.pszText = LPWSTR(L"HKEY_USERS");
+    tvInsert.item.cChildren = 1;
+    tvInsert.item.lParam = (LPARAM)HKEY_USERS;
+    HTREEITEM hKeyUsers = TreeView_InsertItem(hTreeView, &tvInsert);
+
+    tvInsert.hParent = TVI_ROOT;
+    tvInsert.hInsertAfter = TVI_LAST;
+    tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
+    tvInsert.item.pszText = LPWSTR(L"HKEY_CURRENT_CONFIG");
+    tvInsert.item.cChildren = 1;
+    tvInsert.item.lParam = (LPARAM)HKEY_CURRENT_CONFIG;
+    HTREEITEM hKeyCurrentConfig = TreeView_InsertItem(hTreeView, &tvInsert);
+
+    // Subclass the TreeView control to intercept TVN_ITEMEXPANDING notifications
+    SetWindowSubclass(hTreeView, TreeViewSubclassProc, 0, 0);
 }
 
 //
