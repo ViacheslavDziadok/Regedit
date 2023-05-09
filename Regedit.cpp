@@ -5,7 +5,6 @@
 #include "Regedit.h"
 #include "example.cpp"
 #include <Commctrl.h>
-#include <thread>
 
 #define MAX_LOADSTRING 100
 #define MAX_ROOT_KEY_LENGTH 20
@@ -168,6 +167,58 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    return TRUE;
 }
 
+void LoadRegRec(HWND tree_view, HTREEITEM parent, HKEY root)
+{
+    // Don't load any children if parent is not expanded
+    if (!TreeView_GetItemState(tree_view, parent, TVIS_EXPANDED))
+    {
+        return;
+    }
+
+    DWORD index = 0;
+    TCHAR name[512];
+    while (ERROR_SUCCESS == RegEnumKeyW(root, index++, name, sizeof(name) / sizeof(name[0]))) {
+        TV_INSERTSTRUCT tvinsert = { 0 };
+        tvinsert.hParent = parent;
+        tvinsert.hInsertAfter = TVI_LAST;
+        tvinsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
+        tvinsert.item.pszText = name;
+
+        HKEY hSubKey;
+        BOOL hasChildren = FALSE;
+        if (RegOpenKeyExW(root, name, 0, KEY_ENUMERATE_SUB_KEYS, &hSubKey) == ERROR_SUCCESS)
+        {
+            WCHAR szChildSubkey[MAX_KEY_LENGTH];
+            DWORD cchChildSubkey = MAX_KEY_LENGTH;
+            hasChildren = (RegEnumKeyEx(hSubKey, 0, szChildSubkey, &cchChildSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS);
+            RegCloseKey(hSubKey);
+        }
+        tvinsert.item.cChildren = hasChildren ? 1 : 0;
+        tvinsert.item.iImage = 0;   // index of closed folder icon
+        tvinsert.item.iSelectedImage = 0;   // index of open folder icon
+
+        HTREEITEM node = (HTREEITEM)SendMessage(tree_view, TVM_INSERTITEM, 0, (LPARAM)&tvinsert);
+        HKEY next_key;
+        RegOpenKey(root, name, &next_key);
+        LoadRegRec(tree_view, node, next_key);
+        RegCloseKey(next_key);
+    }
+}
+
+void LoadRegistry(HWND tree_view)
+{
+    HKEY root;
+    RegOpenKey(HKEY_CURRENT_USER, TEXT("Software"), &root);
+    LoadRegRec(tree_view, NULL, root);
+    RegCloseKey(root);
+}
+
+typedef struct _TREE_NODE_INFO
+{
+    WCHAR hKey[MAX_KEY_LENGTH];    // registry hive name
+    WCHAR szPath[MAX_PATH];        // full key path
+} TREE_NODE_INFO, * PTREE_NODE_INFO;
+
 //
 //  ФУНКЦИЯ: WndProc(HWND, UINT, WPARAM, LPARAM)
 //
@@ -222,12 +273,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 tvInsert.hInsertAfter = TVI_LAST;
                 tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
                 tvInsert.item.pszText = (LPWSTR)szRootKey;
+
+                // Construct the full path of the subkey
+                WCHAR szFullPath[MAX_PATH];
+                wsprintf(szFullPath, L"%s\\%s", tvInsert.item.pszText, L"");
+
+                // Allocate memory for node info
+                PTREE_NODE_INFO pNodeInfo = new TREE_NODE_INFO;
+                wcscpy_s(pNodeInfo->hKey, MAX_KEY_LENGTH, tvInsert.item.pszText);
+                wcscpy_s(pNodeInfo->szPath, MAX_PATH, szFullPath);
+
                 tvInsert.item.cChildren = 1;
                 tvInsert.item.iImage = 0;
                 tvInsert.item.iSelectedImage = 0;
+                tvInsert.item.lParam = (LPARAM)pNodeInfo;
                 HTREEITEM hRoot = (HTREEITEM)SendMessage(hwndTV, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
                 // SendMessage(hwndTV, TVM_EXPAND, TVE_EXPAND, (LPARAM)hRoot);
             }
+
         }
         break;
         case WM_NOTIFY:
@@ -260,9 +323,37 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     tvItem.cchTextMax = MAX_KEY_LENGTH;
                     SendMessage(hwndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
 
+                    // Get the TREE_NODE_INFO structure from the expanded node
+                    PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)tvItem.lParam;
+                    HKEY hParentKey = NULL;
+                    WCHAR szPath[MAX_PATH] = L"";
                     // Get the parent registry key
-                    HKEY hParentKey = (HKEY)tvItem.lParam;
-                    if (hParentKey == NULL) {
+                    if (pNodeInfo)
+                    {
+                        wcscpy_s(szPath, pNodeInfo->szPath);
+                        // Open the selected registry key
+                        if (lstrcmpi(pNodeInfo->hKey, L"HKEY_CLASSES_ROOT") == 0)
+                        {
+                            hParentKey = HKEY_CLASSES_ROOT;
+                        }
+                        else if (lstrcmpi(pNodeInfo->hKey, L"HKEY_CURRENT_USER") == 0)
+                        {
+                            hParentKey = HKEY_CURRENT_USER;
+                        }
+                        else if (lstrcmpi(pNodeInfo->hKey, L"HKEY_LOCAL_MACHINE") == 0)
+                        {
+                            hParentKey = HKEY_LOCAL_MACHINE;
+                        }
+                        else if (lstrcmpi(pNodeInfo->hKey, L"HKEY_USERS") == 0)
+                        {
+                            hParentKey = HKEY_USERS;
+                        }
+                        else if (lstrcmpi(pNodeInfo->hKey, L"HKEY_CURRENT_CONFIG") == 0)
+                        {
+                            hParentKey = HKEY_CURRENT_CONFIG;
+                        }
+                    }
+                    else {
                         // Open the selected registry key
                         if (lstrcmpi(szKey, L"HKEY_CLASSES_ROOT") == 0)
                         {
@@ -288,13 +379,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                     // Open the selected registry key
                     HKEY hKey;
-                    if (RegOpenKeyExW(hParentKey, L"", 0, KEY_ENUMERATE_SUB_KEYS, &hKey) == ERROR_SUCCESS)
+                    if (RegOpenKeyExW(hParentKey, szPath, 0, KEY_ENUMERATE_SUB_KEYS, &hKey) == ERROR_SUCCESS)
                     {
                         // If child nodes already displayed, skip loading
                         HTREEITEM hChildItem = (HTREEITEM)SendMessage(hwndTV, TVM_GETNEXTITEM, TVGN_CHILD, (LPARAM)hItem);
                         if (hChildItem)
                         {
-                            break;
+                            SendMessage(hwndTV, TVM_DELETEITEM, 0, (LPARAM)hChildItem);
                         }
 
                         // Enumerate subkeys
@@ -303,15 +394,71 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                         DWORD cchSubkey = MAX_KEY_LENGTH;
                         while (RegEnumKeyEx(hKey, dwIndex, szSubkey, &cchSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
                         {
+                            HKEY hSubKey;
+                            BOOL hasChildren = FALSE;
+                            if (RegOpenKeyExW(hKey, szSubkey, 0, KEY_ENUMERATE_SUB_KEYS, &hSubKey) == ERROR_SUCCESS)
+                            {
+                                WCHAR szChildSubkey[MAX_KEY_LENGTH];
+                                DWORD cchChildSubkey = MAX_KEY_LENGTH;
+                                hasChildren = (RegEnumKeyEx(hSubKey, 0, szChildSubkey, &cchChildSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS);
+                                RegCloseKey(hSubKey);
+                            }
+
+                            // Construct the full path of the subkey
+                            WCHAR pszKey[MAX_ROOT_KEY_LENGTH];
+                            switch (reinterpret_cast<DWORD_PTR>(hParentKey))
+                            {
+                                case reinterpret_cast<DWORD_PTR>(HKEY_CLASSES_ROOT):
+								wcscpy_s(pszKey, L"HKEY_CLASSES_ROOT");
+								break;
+                                case reinterpret_cast<DWORD_PTR>(HKEY_CURRENT_USER):
+                                wcscpy_s(pszKey, L"HKEY_CURRENT_USER");
+                                break;
+                                case reinterpret_cast<DWORD_PTR>(HKEY_LOCAL_MACHINE):
+                                wcscpy_s(pszKey, L"HKEY_LOCAL_MACHINE");
+								break;
+								case reinterpret_cast<DWORD_PTR>(HKEY_USERS):
+								wcscpy_s(pszKey, L"HKEY_USERS");
+								break;
+								case reinterpret_cast<DWORD_PTR>(HKEY_CURRENT_CONFIG):
+								wcscpy_s(pszKey, L"HKEY_CURRENT_CONFIG");
+								break;
+							    default:
+								wcscpy_s(pszKey, L"");
+								break;
+
+                            }
+                            WCHAR szFullPath[MAX_PATH];
+                            if (lstrcmp(szKey, L"HKEY_LOCAL_MACHINE") == 0 || 
+                                lstrcmp(szKey, L"HKEY_CURRENT_USER") == 0 || 
+                                lstrcmp(szKey, L"HKEY_CLASSES_ROOT") == 0 || 
+                                lstrcmp(szKey, L"HKEY_USERS") == 0 || 
+                                lstrcmp(szKey, L"HKEY_CURRENT_CONFIG") == 0)
+                            {
+                                wcscpy_s(szFullPath, szSubkey);
+							}
+                            else {
+                                wcscpy_s(szFullPath, szPath);
+                                wcscat_s(szFullPath, L"\\");
+                                wcscat_s(szFullPath, szSubkey);
+                            }
+
                             // Insert subkey into treeview
                             TVINSERTSTRUCT tvInsert;
                             tvInsert.hParent = hItem;
                             tvInsert.hInsertAfter = TVI_LAST;
-                            tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
+                            tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_PARAM;
                             tvInsert.item.pszText = szSubkey;
-                            tvInsert.item.cChildren = 1;
-                            tvInsert.item.iImage = 0;
-                            tvInsert.item.iSelectedImage = 0;
+                            tvInsert.item.cChildren = hasChildren ? 1 : 0;
+                            tvInsert.item.iImage = 0;               // папка
+                            tvInsert.item.iSelectedImage = 0;       // открытая папка
+
+                            // Allocate memory for node info
+                            PTREE_NODE_INFO pNodeInfo = new TREE_NODE_INFO;
+                            wcscpy_s(pNodeInfo->hKey, MAX_KEY_LENGTH, pszKey);
+                            wcscpy_s(pNodeInfo->szPath, MAX_PATH, szFullPath);
+
+                            tvInsert.item.lParam = (LPARAM)pNodeInfo;
                             SendMessage(hwndTV, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
 
                             // Reset variables for next subkey
