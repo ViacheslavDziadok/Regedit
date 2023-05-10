@@ -418,7 +418,7 @@ VOID ModifyValue(HWND hWnd)
         lvi.iItem = iSelected;
         lvi.iSubItem = 0;
         lvi.mask = LVIF_TEXT | LVIF_PARAM;
-        WCHAR szValueName[MAX_VALUE_NAME];
+        WCHAR szValueName[MAX_VALUE_NAME] = { 0 };
         lvi.pszText = szValueName;
         lvi.cchTextMax = MAX_VALUE_NAME;
         ListView_GetItem(hwndListView, &lvi);
@@ -608,7 +608,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                                 // Get the TREE_NODE_INFO structure from the expanded node
                                 PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)tvItem.lParam;
                                 HKEY hParentKey;
-                                WCHAR szPath[MAX_PATH];
+                                WCHAR szPath[MAX_PATH] = { 0 };
                                 // Get the parent registry key
                                 if (pNodeInfo)
                                 {
@@ -648,10 +648,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                                         }
 
                                         // Construct the full path of the subkey
-                                        WCHAR szhKey[MAX_ROOT_KEY_LENGTH];
+                                        WCHAR szhKey[MAX_ROOT_KEY_LENGTH] = { 0 };
                                         wcscpy_s(szhKey, GetStringFromHKey(hParentKey));
 
-                                        WCHAR szNewPath[MAX_PATH];
+                                        WCHAR szNewPath[MAX_PATH] = { 0 };
                                         if (!lstrcmp(szPath, L""))
                                         {
                                             wcscpy_s(szNewPath, szSubkey);
@@ -708,7 +708,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                             PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)tvItem.lParam;
                             HKEY hParentKey;
-                            WCHAR szPath[MAX_PATH];
+                            WCHAR szPath[MAX_PATH] = { 0 };
                             WCHAR szFullPath[MAX_PATH];
                             // Get the parent registry key
                             if (pNodeInfo)
@@ -951,7 +951,7 @@ INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARA
                     // Get the text from the edit control and set it as the new value data.
                     WCHAR szData[MAX_VALUE_NAME];
                     GetDlgItemText(hDlg, IDC_DIALOG_EDIT_STRING_VALUE, szData, MAX_VALUE_NAME);
-                    if (RegSetValueEx(pValueInfo->hKey, pValueInfo->szValueName, 0, pValueInfo->dwType, (const BYTE*)szData, (wcslen(szData) + 1) * sizeof(WCHAR)) == ERROR_SUCCESS)
+                    if (RegSetValueEx(pValueInfo->hKey, pValueInfo->szValueName, 0, pValueInfo->dwType, (const BYTE*)szData, (DWORD)((wcslen(szData) + 1) * sizeof(WCHAR))) == ERROR_SUCCESS)
                     {
                         MessageBox(hDlg, L"Value updated successfully.", L"Success", MB_OK | MB_ICONINFORMATION);
                     }
@@ -987,7 +987,7 @@ INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARA
 INT_PTR CALLBACK EditDwordDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     static HKEY hKey = NULL;
-    static WCHAR szValueName[MAX_VALUE_NAME];
+    static WCHAR szValueName[MAX_VALUE_NAME] = { 0 };
 
     switch (uMsg)
     {
