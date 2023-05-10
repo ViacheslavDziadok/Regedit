@@ -85,68 +85,36 @@ FONT 8, "Ms Shell Dlg"
 
 
 LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
-IDD_MAIN DIALOG 0, 0, 584, 454
+IDD_DIALOG_EDIT_DWORD DIALOG 0, 0, 186, 105
 STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
-CAPTION "Редактор Реестра Windows"
+CAPTION "Изменить значение DWORD (32-бит)"
 FONT 8, "Ms Shell Dlg"
 {
-    PUSHBUTTON      "Добавить ключ", 0, 18, 224, 71, 14, 0, WS_EX_LEFT
-    PUSHBUTTON      "Поиск", 0, 17, 204, 71, 14, 0, WS_EX_LEFT
-    CONTROL         "", 0, WC_TREEVIEW, WS_TABSTOP | WS_BORDER | TVS_INFOTIP | TVS_NOSCROLL, 99, 205, 216, 225, WS_EX_LEFT
-    LISTBOX         0, 323, 205, 232, 227, WS_TABSTOP | WS_HSCROLL | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | LBS_HASSTRINGS | LBS_SORT | LBS_NOTIFY, WS_EX_LEFT
-    LTEXT           "HKEY_CURRENT_USER/SOFTWARE", 0, 97, 60, 128, 9, SS_LEFT, WS_EX_LEFT
-    PUSHBUTTON      "Обновить", 0, 457, 74, 38, 14, 0, WS_EX_LEFT
-    LTEXT           "Новый рабочий узел:", 0, 11, 76, 72, 9, SS_LEFT, WS_EX_LEFT
-    EDITTEXT        0, 96, 74, 357, 14, ES_AUTOHSCROLL, WS_EX_LEFT
-    PUSHBUTTON      "Удалить тестовые записи реестра", 0, 371, 34, 123, 14, 0, WS_EX_LEFT
-    COMBOBOX        0, 96, 92, 130, 30, CBS_DROPDOWNLIST | CBS_HASSTRINGS, WS_EX_LEFT
-    PUSHBUTTON      "Создать тестовые записи реестра", 0, 10, 34, 123, 14, 0, WS_EX_LEFT
-    LTEXT           "Приветствуем в Редакторе Реестра Windows. Для продолжения работы, выберите желаемую функцию и введите требуемые параметры.\r\nВНИМАНИЕ: Программа позволяет редактировать любые незащищённые данные реестра Windows. Соблюдайте осторожность при работе.", 0, 11, 7, 480, 17, SS_LEFT, WS_EX_LEFT
-    LTEXT           "Текущий рабочий узел:", 0, 11, 60, 80, 9, SS_LEFT, WS_EX_LEFT
-    EDITTEXT        0, 95, 133, 357, 14, ES_AUTOHSCROLL, WS_EX_LEFT
-    COMBOBOX        0, 95, 151, 130, 30, CBS_DROPDOWNLIST | CBS_HASSTRINGS, WS_EX_LEFT
-    LTEXT           "Текущий ключ:", 0, 12, 118, 52, 9, SS_LEFT, WS_EX_LEFT
-    LTEXT           "Новый ключ:", 0, 12, 135, 44, 9, SS_LEFT, WS_EX_LEFT
-    PUSHBUTTON      "Обновить", 0, 457, 133, 38, 14, 0, WS_EX_LEFT
-    LTEXT           "HKEY:", 0, 11, 93, 22, 9, SS_LEFT, WS_EX_LEFT
-    LTEXT           "Права чтения/записи:", 0, 12, 152, 76, 9, SS_LEFT, WS_EX_LEFT
-    LTEXT           "_test_key", 0, 95, 119, 32, 9, SS_LEFT, WS_EX_LEFT
-    PUSHBUTTON      "Найти тестовые записи реестра", 0, 195, 34, 115, 14, 0, WS_EX_LEFT
-    PUSHBUTTON      "Удалить ключ", 0, 18, 244, 71, 14, 0, WS_EX_LEFT
-    PUSHBUTTON      "Добавить запись", 0, 17, 264, 72, 14, 0, WS_EX_LEFT
-    PUSHBUTTON      "Удалить запись", 0, 17, 283, 72, 14, 0, WS_EX_LEFT
+    GROUPBOX        "База", 0, 84, 40, 91, 40, 0, WS_EX_LEFT
+    AUTORADIOBUTTON "Шестнадцатеричная", 303, 91, 51, 84, 8, WS_GROUP | WS_TABSTOP | WS_DISABLED, WS_EX_LEFT
+    PUSHBUTTON      "Отменить", IDCANCEL, 132, 85, 48, 14, 0, WS_EX_LEFT
+    DEFPUSHBUTTON   "OK", IDOK, 81, 85, 46, 14, 0, WS_EX_LEFT
+    LTEXT           "Значение:", 0, 10, 10, 35, 9, SS_LEFT, WS_EX_LEFT
+    EDITTEXT        301, 9, 20, 166, 14, ES_AUTOHSCROLL | ES_READONLY, WS_EX_LEFT
+    EDITTEXT        302, 9, 49, 70, 14, ES_AUTOHSCROLL
+    LTEXT           "Данные:", 0, 10, 39, 30, 9, SS_LEFT, WS_EX_LEFT
+    AUTORADIOBUTTON "Десятичная", 304, 91, 66, 57, 8, WS_GROUP | WS_TABSTOP | WS_DISABLED, WS_EX_LEFT
 }
 
 
 
 LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
-IDD_REMOVE_KEY DIALOG 0, 0, 186, 95
+IDD_DIALOG_EDIT_STRING DIALOG 0, 0, 186, 95
 STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
-CAPTION "Удалить ключ"
+CAPTION "Изменить значение строки"
 FONT 8, "Ms Shell Dlg"
 {
-    PUSHBUTTON      "Отменить", IDCANCEL, 135, 41, 45, 14, 0, WS_EX_LEFT
-    DEFPUSHBUTTON   "Удалить", IDOK, 134, 21, 46, 14, 0, WS_EX_LEFT
-    LTEXT           "Введите название ключа:", 0, 10, 7, 88, 9, SS_LEFT, WS_EX_LEFT
-    EDITTEXT        0, 9, 20, 116, 14, ES_AUTOHSCROLL, WS_EX_LEFT
-    LTEXT           "Адрес ключа для удаления:", 0, 11, 44, 94, 9, SS_LEFT, WS_EX_LEFT
-    LTEXT           "HKEY_CURRENT_USER/SOFTWARE", 0, 10, 60, 162, 21, SS_LEFT, WS_EX_LEFT
-}
-
-
-
-LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
-IDD_REMOVE_VALUE DIALOG 0, 0, 186, 107
-STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
-CAPTION "Удалить запись"
-FONT 8, "Ms Shell Dlg"
-{
-    PUSHBUTTON      "Отменить", IDCANCEL, 136, 41, 45, 14, 0, WS_EX_LEFT
-    DEFPUSHBUTTON   "Удалить", IDOK, 135, 21, 46, 14, 0, WS_EX_LEFT
-    LTEXT           "Введите название записи:", 0, 10, 7, 91, 9, SS_LEFT, WS_EX_LEFT
-    EDITTEXT        0, 9, 18, 116, 14, ES_AUTOHSCROLL, WS_EX_LEFT
-    LTEXT           "Адрес записи для удаления:", 0, 11, 65, 97, 9, SS_LEFT, WS_EX_LEFT
-    LTEXT           "HKEY_CURRENT_USER/SOFTWARE", 0, 10, 79, 162, 22, SS_LEFT, WS_EX_LEFT
+    PUSHBUTTON      "Отменить", IDCANCEL, 127, 74, 48, 14, 0, WS_EX_LEFT
+    DEFPUSHBUTTON   "OK", IDOK, 76, 74, 46, 14, 0, WS_EX_LEFT
+    LTEXT           "Значение:", 0, 10, 10, 35, 9, SS_LEFT, WS_EX_LEFT
+    EDITTEXT        201, 9, 20, 166, 14, ES_AUTOHSCROLL | ES_READONLY, WS_EX_LEFT
+    EDITTEXT        202, 9, 49, 166, 14, ES_AUTOHSCROLL
+    LTEXT           "Данные:", 0, 10, 39, 30, 9, SS_LEFT, WS_EX_LEFT
 }
 
 
