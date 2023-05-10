@@ -21,18 +21,30 @@ HWND hwndEdit;
 
 // Отправить объявления функций, включенных в этот модуль кода:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
-BOOL                InitInstance(HINSTANCE, int);
-void ModifyValue(int iSelected, const HWND& hWnd);
+BOOL                InitInstance(HINSTANCE, INT);
+
+CONST WCHAR*        GetStringFromHKEY(HKEY);
+HKEY                GetHKEYFromString(CONST WCHAR*);
+CONST WCHAR*        RegTypeToString(DWORD);
+LPWSTR              RegDataToString(DWORD, CONST BYTE*, DWORD);
+VOID                SeparateFullPath(WCHAR[MAX_PATH], WCHAR[MAX_PATH], WCHAR[MAX_PATH]);
+
+VOID                CreateRootKeys(HWND);
+VOID                DeleteTreeItemsRecursively(HWND, HTREEITEM);
+VOID                PopulateListView(HWND, HTREEITEM);
+
+VOID                ModifyValue(HWND);
+VOID                DeleteValue(HWND);
+
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
-void SeparateFullPath(WCHAR  szFullPath[260], WCHAR  szRootKeyName[20], WCHAR  szSubKeyPath[260]);
 INT_PTR CALLBACK    EditStringDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    EditDwordDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
-int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
+INT APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
                      _In_ LPWSTR    lpCmdLine,
-                     _In_ int       nCmdShow)
+                     _In_ INT       nCmdShow)
 {
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
@@ -103,7 +115,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 //        В этой функции маркер экземпляра сохраняется в глобальной переменной, а также
 //        создается и выводится главное окно программы.
 //
-BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
+BOOL InitInstance(HINSTANCE hInstance, INT nCmdShow)
 {
    hInst = hInstance; // Сохранить маркер экземпляра в глобальной переменной
 
@@ -131,61 +143,152 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    return TRUE;
 }
 
-CONST WCHAR* GetStringFromHKey(HKEY hKey)
-{
-    switch (reinterpret_cast<DWORD_PTR>(hKey))
-    {
-        case reinterpret_cast<DWORD_PTR>(HKEY_CLASSES_ROOT):
-            return L"HKEY_CLASSES_ROOT";
-        case reinterpret_cast<DWORD_PTR>(HKEY_CURRENT_USER):
-            return L"HKEY_CURRENT_USER";
-        case reinterpret_cast<DWORD_PTR>(HKEY_LOCAL_MACHINE):
-            return L"HKEY_LOCAL_MACHINE";
-        case reinterpret_cast<DWORD_PTR>(HKEY_USERS):
-            return L"HKEY_USERS";
-        case reinterpret_cast<DWORD_PTR>(HKEY_CURRENT_CONFIG):
-            return L"HKEY_CURRENT_CONFIG";
-        default:
-            return L"";
-    }
-}
 
-HKEY GetHKeyFromString(WCHAR* szKey)
-{
-	if (lstrcmp(szKey, L"HKEY_CLASSES_ROOT") == 0)
-		return HKEY_CLASSES_ROOT;
-	else if (lstrcmp(szKey, L"HKEY_CURRENT_USER") == 0)
-		return HKEY_CURRENT_USER;
-	else if (lstrcmp(szKey, L"HKEY_LOCAL_MACHINE") == 0)
-		return HKEY_LOCAL_MACHINE;
-	else if (lstrcmp(szKey, L"HKEY_USERS") == 0)
-		return HKEY_USERS;
-	else if (lstrcmp(szKey, L"HKEY_CURRENT_CONFIG") == 0)
-		return HKEY_CURRENT_CONFIG;
-	else
-		return NULL;
-}
 
+// Структура для передачи параметров пути в ячейку дерева (ключ)
 typedef struct _TREE_NODE_INFO
 {
     WCHAR hKey[MAX_KEY_LENGTH];    // registry hive name
     WCHAR szPath[MAX_PATH];        // full key path
 } TREE_NODE_INFO, * PTREE_NODE_INFO;
 
+// Структура для передачи параметров в диалоговое окно редактирования двоичного значения
 typedef struct _VALUE_INFO
 {
     HKEY hKey;
     WCHAR szValueName[MAX_VALUE_NAME];
     DWORD dwType;
-} VALUE_INFO;
+} VALUE_INFO, * PVALUE_INFO;
 
+// Структура для передачи параметров в диалоговое окно редактирования строкового значения
 typedef struct _EDITVALUEDLGPARAMS
 {
     HKEY hKey;
     WCHAR szValueName[MAX_VALUE_NAME];
 } EDITVALUEDLGPARAMS, * PEDITVALUEDLGPARAMS;
 
-void CreateRootKeys()
+
+
+// Функция для получения строки из HKEY
+CONST WCHAR* GetStringFromHKey(HKEY hKey)
+{
+    switch (reinterpret_cast<DWORD_PTR>(hKey))
+    {
+    case reinterpret_cast<DWORD_PTR>(HKEY_CLASSES_ROOT):
+        return L"HKEY_CLASSES_ROOT";
+    case reinterpret_cast<DWORD_PTR>(HKEY_CURRENT_USER):
+        return L"HKEY_CURRENT_USER";
+    case reinterpret_cast<DWORD_PTR>(HKEY_LOCAL_MACHINE):
+        return L"HKEY_LOCAL_MACHINE";
+    case reinterpret_cast<DWORD_PTR>(HKEY_USERS):
+        return L"HKEY_USERS";
+    case reinterpret_cast<DWORD_PTR>(HKEY_CURRENT_CONFIG):
+        return L"HKEY_CURRENT_CONFIG";
+    default:
+        return L"";
+    }
+}
+
+// Функция для получения HKEY из строки
+HKEY GetHKeyFromString(CONST WCHAR* szKey)
+{
+    if (lstrcmp(szKey, L"HKEY_CLASSES_ROOT") == 0)
+        return HKEY_CLASSES_ROOT;
+    else if (lstrcmp(szKey, L"HKEY_CURRENT_USER") == 0)
+        return HKEY_CURRENT_USER;
+    else if (lstrcmp(szKey, L"HKEY_LOCAL_MACHINE") == 0)
+        return HKEY_LOCAL_MACHINE;
+    else if (lstrcmp(szKey, L"HKEY_USERS") == 0)
+        return HKEY_USERS;
+    else if (lstrcmp(szKey, L"HKEY_CURRENT_CONFIG") == 0)
+        return HKEY_CURRENT_CONFIG;
+    else
+        return NULL;
+}
+
+// Функция конвертирует тип данных реестра в строку
+CONST WCHAR* RegTypeToString(DWORD dwType)
+{
+    switch (dwType)
+    {
+    case REG_NONE:
+        return L"REG_NONE";
+    case REG_SZ:
+        return L"REG_SZ";
+    case REG_EXPAND_SZ:
+        return L"REG_EXPAND_SZ";
+    case REG_BINARY:
+        return L"REG_BINARY";
+    case REG_DWORD:
+        return L"REG_DWORD";
+    case REG_DWORD_BIG_ENDIAN:
+        return L"REG_DWORD_BIG_ENDIAN";
+    case REG_LINK:
+        return L"REG_LINK";
+    case REG_MULTI_SZ:
+        return L"REG_MULTI_SZ";
+    case REG_RESOURCE_LIST:
+        return L"REG_RESOURCE_LIST";
+    case REG_FULL_RESOURCE_DESCRIPTOR:
+        return L"REG_FULL_RESOURCE_DESCRIPTOR";
+    case REG_RESOURCE_REQUIREMENTS_LIST:
+        return L"REG_RESOURCE_REQUIREMENTS_LIST";
+    case REG_QWORD:
+        return L"REG_QWORD";
+    default:
+        return L"UNKNOWN";
+    }
+}
+
+// Функция конвертирует данные реестра в строку
+LPWSTR RegDataToString(BYTE* data, DWORD dwType, DWORD dwDataSize)
+{
+    static WCHAR buffer[MAX_VALUE_NAME];
+
+    // This is a simple example which only converts string and DWORD types. 
+    // Other types may need additional handling.
+    switch (dwType) {
+    case REG_SZ:
+    case REG_EXPAND_SZ:
+        wcscpy_s(buffer, MAX_VALUE_NAME, (LPWSTR)data);
+        break;
+    case REG_DWORD:
+    {
+        DWORD dwValue = *(DWORD*)data;
+        swprintf_s(buffer, MAX_VALUE_NAME, L"%lu", dwValue);
+        break;
+    }
+    default:
+        wcscpy_s(buffer, MAX_VALUE_NAME, L"");
+        break;
+    }
+
+    return buffer;
+}
+
+// Функция разделяет полный путь к реестру на корневой ключ и путь к подключу
+VOID SeparateFullPath(WCHAR szFullPath[MAX_PATH], WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH], WCHAR szSubKeyPath[MAX_PATH])
+{
+    // Separate the root key name from the subkey path.
+    WCHAR* p = wcschr(szFullPath, L'\\');
+    if (p == NULL)
+    {
+        // Handle case where no backslash found (full path is just the root key name)
+        wcscpy_s(szRootKeyName, MAX_ROOT_KEY_LENGTH, szFullPath);
+        szSubKeyPath[0] = L'\0';
+    }
+    else
+    {
+        // Copy root key name and subkey path separately
+        wcsncpy_s(szRootKeyName, MAX_ROOT_KEY_LENGTH, szFullPath, p - szFullPath);
+        wcscpy_s(szSubKeyPath, MAX_PATH, p + 1);
+    }
+}
+
+
+
+// Функция для создания корневых ключей
+VOID CreateRootKeys()
 {
     // Set root items
     for (int i = 0; i < 5; i++)
@@ -235,7 +338,8 @@ void CreateRootKeys()
     }
 }
 
-void DeleteTreeItemsRecursively(HWND hwndTV, HTREEITEM hItem)
+// Функция удаляет все элементы дерева
+VOID DeleteTreeItemsRecursively(HWND hwndTV, HTREEITEM hItem)
 {
     HTREEITEM hChildItem = TreeView_GetChild(hwndTV, hItem);
     while (hChildItem)
@@ -258,67 +362,8 @@ void DeleteTreeItemsRecursively(HWND hwndTV, HTREEITEM hItem)
     TreeView_DeleteItem(hwndTV, hItem);
 }
 
-// Function to convert registry value type to string
-CONST WCHAR* RegTypeToString(DWORD dwType)
-{
-    switch (dwType)
-    {
-        case REG_NONE:
-            return L"REG_NONE";
-        case REG_SZ:
-            return L"REG_SZ";
-        case REG_EXPAND_SZ:
-            return L"REG_EXPAND_SZ";
-        case REG_BINARY:
-            return L"REG_BINARY";
-        case REG_DWORD:
-            return L"REG_DWORD";
-        case REG_DWORD_BIG_ENDIAN:
-            return L"REG_DWORD_BIG_ENDIAN";
-        case REG_LINK:
-            return L"REG_LINK";
-        case REG_MULTI_SZ:
-            return L"REG_MULTI_SZ";
-        case REG_RESOURCE_LIST:
-            return L"REG_RESOURCE_LIST";
-        case REG_FULL_RESOURCE_DESCRIPTOR:
-            return L"REG_FULL_RESOURCE_DESCRIPTOR";
-        case REG_RESOURCE_REQUIREMENTS_LIST:
-            return L"REG_RESOURCE_REQUIREMENTS_LIST";
-        case REG_QWORD:
-            return L"REG_QWORD";
-        default:
-            return L"UNKNOWN";
-    }
-}
-
-// Function to convert registry value data to string
-LPWSTR RegDataToString(BYTE* data, DWORD dwType, DWORD dwDataSize)
-{
-    static WCHAR buffer[MAX_VALUE_NAME];
-
-    // This is a simple example which only converts string and DWORD types. 
-    // Other types may need additional handling.
-    switch (dwType) {
-    case REG_SZ:
-    case REG_EXPAND_SZ:
-        wcscpy_s(buffer, MAX_VALUE_NAME, (LPWSTR)data);
-        break;
-    case REG_DWORD:
-    {
-        DWORD dwValue = *(DWORD*)data;
-        swprintf_s(buffer, MAX_VALUE_NAME, L"%lu", dwValue);
-        break;
-    }
-    default:
-        wcscpy_s(buffer, MAX_VALUE_NAME, L"");
-        break;
-    }
-
-    return buffer;
-}
-
-void PopulateListViewWithRegValues(HWND hwndListView, HKEY hKey)
+// Функция заполняет ListView значениями из реестра
+VOID PopulateListView(HWND hwndListView, HKEY hKey)
 {
     // Clear the ListView.
     ListView_DeleteAllItems(hwndListView);
@@ -359,35 +404,15 @@ void PopulateListViewWithRegValues(HWND hwndListView, HKEY hKey)
     }
 }
 
-void SeparateFullPath(WCHAR  szFullPath[MAX_PATH], WCHAR  szRootKeyName[MAX_ROOT_KEY_LENGTH], WCHAR  szSubKeyPath[MAX_PATH])
-{
-    // Separate the root key name from the subkey path.
-    WCHAR* p = wcschr(szFullPath, L'\\');
-    if (p == NULL)
-    {
-        // Handle case where no backslash found (full path is just the root key name)
-        wcscpy_s(szRootKeyName, MAX_ROOT_KEY_LENGTH, szFullPath);
-        szSubKeyPath[0] = L'\0';
-    }
-    else
-    {
-        // Copy root key name and subkey path separately
-        wcsncpy_s(szRootKeyName, MAX_ROOT_KEY_LENGTH, szFullPath, p - szFullPath);
-        wcscpy_s(szSubKeyPath, MAX_PATH, p + 1);
-    }
-}
 
-void ModifyValue(HWND hWnd)
+
+// Функция модифицирует значение в реестре
+VOID ModifyValue(HWND hWnd)
 {
     // Get the selected item in the list view
     int iSelected = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED);
 
-    if (iSelected == -1)
-    {
-        MessageBox(hWnd, L"No item selected for modification", L"Warning", MB_OK | MB_ICONWARNING);
-        return;
-    }
-    else
+    if (iSelected != -1)
     {
         LVITEM lvi = { 0 };
         lvi.iItem = iSelected;
@@ -430,56 +455,54 @@ void ModifyValue(HWND hWnd)
     }
 }
 
-void DeleteValue(HWND hWnd)
+// Функция удаляет значение из реестра
+VOID DeleteValue(HWND hWnd)
 {
     // Get the selected item in the list view
     int iSelected = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED);
-    if (iSelected == -1)
+    if (iSelected != -1)
     {
-        MessageBox(NULL, L"No item selected for deletion", L"Warning", MB_OK | MB_ICONWARNING);
-        return;
-    }
+        // Get the name of the selected value
+        WCHAR szValueName[MAX_VALUE_NAME] = { 0 };
+        LVITEM lvi = { 0 };
+        lvi.mask = LVIF_TEXT;
+        lvi.iItem = iSelected;
+        lvi.pszText = szValueName;
+        lvi.cchTextMax = sizeof(szValueName) / sizeof(WCHAR);
+        ListView_GetItem(hwndListView, &lvi);
 
-    // Get the name of the selected value
-    WCHAR szValueName[MAX_VALUE_NAME] = { 0 };
-    LVITEM lvi = { 0 };
-    lvi.mask = LVIF_TEXT;
-    lvi.iItem = iSelected;
-    lvi.pszText = szValueName;
-    lvi.cchTextMax = sizeof(szValueName) / sizeof(WCHAR);
-    ListView_GetItem(hwndListView, &lvi);
+        // Get the key path from the edit control.
+        WCHAR szFullPath[MAX_PATH];
+        GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
 
-    // Get the key path from the edit control.
-    WCHAR szFullPath[MAX_PATH];
-    GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+        WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
+        WCHAR szSubKeyPath[MAX_PATH] = L"";
 
-    WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
-    WCHAR szSubKeyPath[MAX_PATH] = L"";
+        SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
 
-    SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
-
-    // Display a confirmation dialog box before deleting the value.
-    INT_PTR nRet = MessageBox(hWnd, L"Are you sure you want to delete this value?", L"Confirm Delete", MB_YESNO | MB_ICONWARNING);
-    if (nRet == IDYES)
-    {
-        HKEY hKey;
-        if (RegOpenKeyExW(GetHKeyFromString(szRootKeyName), szSubKeyPath, 0, KEY_READ | KEY_WRITE, &hKey) == ERROR_SUCCESS)
+        // Display a confirmation dialog box before deleting the value.
+        INT_PTR nRet = MessageBox(hWnd, L"Are you sure you want to delete this value?", L"Confirm Delete", MB_YESNO | MB_ICONWARNING);
+        if (nRet == IDYES)
         {
-            // Delete the value
-            LONG lResult = RegDeleteValue(hKey, szValueName);
-            if (lResult == ERROR_SUCCESS)
+            HKEY hKey;
+            if (RegOpenKeyExW(GetHKeyFromString(szRootKeyName), szSubKeyPath, 0, KEY_READ | KEY_WRITE, &hKey) == ERROR_SUCCESS)
             {
-                // Remove the item from the list view
-                ListView_DeleteItem(hwndListView, iSelected);
-                MessageBox(NULL, L"Value deleted successfully.", L"Success", MB_OK);
+                // Delete the value
+                LONG lResult = RegDeleteValue(hKey, szValueName);
+                if (lResult == ERROR_SUCCESS)
+                {
+                    // Remove the item from the list view
+                    ListView_DeleteItem(hwndListView, iSelected);
+                    MessageBox(NULL, L"Value deleted successfully.", L"Success", MB_OK);
+                }
+			    else
+                {
+                    // Handle the error
+                    MessageBox(NULL, L"Failed to delete the selected value", L"Error", MB_OK | MB_ICONERROR);
+                    return;
+                }
+                RegCloseKey(hKey);
             }
-			else
-            {
-                // Handle the error
-                MessageBox(NULL, L"Failed to delete the selected value", L"Error", MB_OK | MB_ICONERROR);
-                return;
-            }
-            RegCloseKey(hKey);
         }
     }
 }
@@ -489,10 +512,12 @@ void DeleteValue(HWND hWnd)
 //
 //  ЦЕЛЬ: Обрабатывает сообщения в главном окне.
 //
-//  WM_COMMAND  - обработать меню приложения
-//  WM_PAINT    - Отрисовка главного окна
-//  WM_DESTROY  - отправить сообщение о выходе и вернуться
-//
+//  WM_CREATE      - создание элементов в главном окне
+//  WM_NOTIFY      - обработка уведомлений от дочерних элементов управления
+//  WM_COMMAND     - обработка меню приложения
+//  WM_CONTEXTMENU - обработка контекстных меню для дерева ключей и списка значений
+//  WM_PAINT       - отрисовка главного окна
+//  WM_DESTROY     - отправка сообщения о выходе и очистка памятиЦ
 //
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -502,7 +527,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         {
             // Create the TreeView control
             hwndTV = CreateWindowEx(0, WC_TREEVIEW, NULL, 
-                WS_VISIBLE | WS_CHILD | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_HASLINES | WS_BORDER, 
+                WS_VISIBLE | WS_CHILD | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_HASLINES | WS_BORDER,
                 25, 140, 300, 500, 
                 hWnd, (HMENU)IDC_TREEVIEW, GetModuleHandle(NULL), NULL);
 
@@ -705,7 +730,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                             HKEY hKey;
                             if (RegOpenKeyExW(hParentKey, szPath, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-                                PopulateListViewWithRegValues(hwndListView, hKey);
+                                PopulateListView(hwndListView, hKey);
 
                                 // Update the Edit Control
                                 SendMessage(hwndEdit, WM_SETTEXT, 0, (LPARAM)szFullPath);
@@ -729,7 +754,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                         case LVN_KEYDOWN:
                         {
                             LPNMLVKEYDOWN pnkd = (LPNMLVKEYDOWN)pnmhdr;
-                            if (pnkd->wVKey == VK_DELETE)
+                            if (pnkd->wVKey == VK_RETURN)
+                            {
+                                ModifyValue(hWnd);
+                            }
+                            else if (pnkd->wVKey == VK_DELETE)
                             {
                                 DeleteValue(hWnd);
                             }
@@ -880,9 +909,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         default:
             return DefWindowProc(hWnd, message, wParam, lParam);
         }
-    return 0;
+    return FALSE;
 }
 
+//
+//  ФУНКЦИЯ: EditStringDlgProc(HWND, UINT, WPARAM, LPARAM)
+//  
+//  ЦЕЛЬ: Обрабатывает сообщения для диалогового окна изменения строкового значения в реестре Windows.
+//
+//  WM_INITDIALOG - инициализирование диалогового окна.
+//  WM_COMMAND    - обработка команд диалогового окна.
+//
 INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
     static VALUE_INFO* pValueInfo;
@@ -939,6 +976,14 @@ INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARA
     return FALSE;
 }
 
+//
+//  Функция: EditDwordDlgProc(HWND, UINT, WPARAM, LPARAM)
+//  
+//  ЦЕЛЬ: Обрабатывает сообщения для диалогового окна изменения двоичного значения в реестре Windows.
+//
+//  WM_INITDIALOG - инициализирование диалогового окна.
+//  WM_COMMAND    - обработка команд диалогового окна.
+//
 INT_PTR CALLBACK EditDwordDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     static HKEY hKey = NULL;
