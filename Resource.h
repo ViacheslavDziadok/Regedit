@@ -27,4 +27,6 @@
 #define ID_MODIFY_VALUE                         901
 #define ID_DELETE_VALUE                         902
 #define ID_RENAME_VALUE                         903
-#define ID_NEW_VALUE                            904
+#define ID_CREATE_VALUE                         904
+#define ID_CREATE_STRING_VALUE                  905
+#define ID_CREATE_DWORD_VALUE                   906

@@ -31,10 +31,16 @@ VOID                SeparateFullPath(WCHAR[MAX_PATH], WCHAR[MAX_PATH], WCHAR[MAX
 
 VOID                CreateRootKeys(HWND);
 VOID                DeleteTreeItemsRecursively(HWND, HTREEITEM);
+INT                 CompareValueNamesEx(LPARAM, LPARAM, LPARAM);
+VOID                OnColumnClickEx(LPNMLISTVIEW);
 VOID                PopulateListView(HWND, HTREEITEM);
+VOID                UpdateListView(HWND);
 
+VOID                CreateValue(HWND, DWORD);
 VOID                ModifyValue(HWND);
-VOID                DeleteValue(HWND);
+VOID                RenameValue(HWND);
+DWORD               RenameRegValue(HWND, CONST WCHAR*, CONST WCHAR*);
+VOID                DeleteValues(HWND);
 
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    EditStringDlgProc(HWND, UINT, WPARAM, LPARAM);
@@ -48,8 +54,6 @@ INT APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 {
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
-
-    // TODO: Разместите код здесь.
 
     // Инициализация глобальных строк
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
@@ -139,7 +143,6 @@ BOOL InitInstance(HINSTANCE hInstance, INT nCmdShow)
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
    
-
    return TRUE;
 }
 
@@ -167,10 +170,17 @@ typedef struct _EDITVALUEDLGPARAMS
     WCHAR szValueName[MAX_VALUE_NAME];
 } EDITVALUEDLGPARAMS, * PEDITVALUEDLGPARAMS;
 
+// Структура для передачи параметров в List View
+typedef struct _TREE_NODE_DATA
+{
+    HWND hList;
+    INT  iSubItem;
+    BOOL bSortAscending;
+} TREE_NODE_DATA, * PTREE_NODE_DATA;
 
 
 // Функция для получения строки из HKEY
-CONST WCHAR* GetStringFromHKey(HKEY hKey)
+CONST WCHAR* GetStringFromHKEY(HKEY hKey)
 {
     switch (reinterpret_cast<DWORD_PTR>(hKey))
     {
@@ -190,7 +200,7 @@ CONST WCHAR* GetStringFromHKey(HKEY hKey)
 }
 
 // Функция для получения HKEY из строки
-HKEY GetHKeyFromString(CONST WCHAR* szKey)
+HKEY GetHKEYFromString(CONST WCHAR* szKey)
 {
     if (lstrcmp(szKey, L"HKEY_CLASSES_ROOT") == 0)
         return HKEY_CLASSES_ROOT;
@@ -362,6 +372,35 @@ VOID DeleteTreeItemsRecursively(HWND hwndTV, HTREEITEM hItem)
     TreeView_DeleteItem(hwndTV, hItem);
 }
 
+// Функция сравнения имён двух элементов дерева
+INT CompareValueNamesEx(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort)
+{
+    TREE_NODE_DATA* data = (TREE_NODE_DATA*)lParamSort;
+    WCHAR buf1[MAX_VALUE_NAME] = { 0 }, buf2[MAX_VALUE_NAME] = { 0 };
+    ListView_GetItemText(data->hList, lParam1, data->iSubItem, buf1, _countof(buf1));
+    ListView_GetItemText(data->hList, lParam2, data->iSubItem, buf2, _countof(buf2));
+    INT res = wcscmp(buf1, buf2);
+    return data->bSortAscending ? res >= 0 : res <= 0;
+}
+
+// Функция сортировки элементов ListView
+VOID OnColumnClickEx(LPNMLISTVIEW pLVInfo)
+{
+    static INT nSortColumn = 0;
+    static BOOL bSortAscending = TRUE;
+    if (pLVInfo->iSubItem != nSortColumn)
+        bSortAscending = TRUE;
+    else
+        bSortAscending = !bSortAscending;
+    nSortColumn = pLVInfo->iSubItem;
+
+    TREE_NODE_DATA data;
+    data.hList = pLVInfo->hdr.hwndFrom;
+    data.iSubItem = nSortColumn;
+    data.bSortAscending = bSortAscending;
+    ListView_SortItemsEx(pLVInfo->hdr.hwndFrom, CompareValueNamesEx, &data);
+}
+
 // Функция заполняет ListView значениями из реестра
 VOID PopulateListView(HWND hwndListView, HKEY hKey)
 {
@@ -375,7 +414,7 @@ VOID PopulateListView(HWND hwndListView, HKEY hKey)
     BYTE data[MAX_VALUE_NAME];
     DWORD dwDataSize = MAX_VALUE_NAME;
 
-    while (RegEnumValue(hKey, dwIndex, szValueName, &dwValueNameSize, NULL, &dwType, data, &dwDataSize) == ERROR_SUCCESS)
+    while (RegEnumValueW(hKey, dwIndex, szValueName, &dwValueNameSize, NULL, &dwType, data, &dwDataSize) == ERROR_SUCCESS)
     {
         LVITEM lvi = { 0 };
         lvi.mask = LVIF_TEXT | LVIF_PARAM;
@@ -402,9 +441,126 @@ VOID PopulateListView(HWND hwndListView, HKEY hKey)
         dwValueNameSize = MAX_VALUE_NAME;
         dwDataSize = MAX_VALUE_NAME;
     }
+
+    TREE_NODE_DATA treeData;
+    treeData.hList = hwndListView;
+    treeData.iSubItem = 0;
+    treeData.bSortAscending = TRUE;
+
+    // Sort the ListView items by the first column.
+    ListView_SortItemsEx(hwndListView, CompareValueNamesEx, &treeData);
+}
+
+// Функция обновляет значения ключа реестра
+VOID UpdateListView(HWND hWnd)
+{
+    // Get the currently selected key
+    HTREEITEM hSelectedItem = TreeView_GetSelection(hwndTV);
+    if (hSelectedItem)
+    {
+        WCHAR szFullPath[MAX_PATH];
+        GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+        WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
+        WCHAR szSubKeyPath[MAX_PATH] = L"";
+        SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
+
+        HKEY hKey;
+        if (RegOpenKeyExW(GetHKEYFromString(szRootKeyName), szSubKeyPath, NULL, KEY_READ, &hKey) == ERROR_SUCCESS)
+        {
+            // populate the listview with the values of the selected key
+            PopulateListView(hWnd, hKey);
+            RegCloseKey(hKey);
+        }
+    }
 }
 
 
+
+// Функция создает новое значение в реестре
+VOID CreateValue(HWND hWnd, DWORD dwType)
+{
+    WCHAR szValueName[MAX_VALUE_NAME] = L"New Value";
+
+	HTREEITEM hItem = TreeView_GetSelection(hwndTV);
+	TVITEM item;
+	item.mask = TVIF_PARAM;
+	item.hItem = hItem;
+	TreeView_GetItem(hwndTV, &item);
+
+    // Get the key path from the edit control.
+    WCHAR szFullPath[MAX_PATH];
+    GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+
+    WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
+    WCHAR szSubKeyPath[MAX_PATH] = L"";
+
+    SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
+
+	HKEY hKey;
+    if (RegOpenKeyExW(GetHKEYFromString(szRootKeyName), szSubKeyPath, 0, KEY_ALL_ACCESS, &hKey) == ERROR_SUCCESS)
+    {
+        // Generate a unique value name
+        WCHAR szUniqueValueName[MAX_VALUE_NAME] = { 0 };
+        int index = 1;
+        while (RegQueryValueExW(hKey, szValueName, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
+        {
+            // Value name exists, generate a new one
+            swprintf_s(szUniqueValueName, MAX_VALUE_NAME, L"%s #%d", szValueName, index);
+            index++;
+            // Check if the newly generated value name is unique
+            if (RegQueryValueExW(hKey, szUniqueValueName, NULL, NULL, NULL, NULL) != ERROR_SUCCESS)
+            {
+                // Unique value name found, break out of the loop
+                wcscpy_s(szValueName, MAX_VALUE_NAME, szUniqueValueName);
+                break;
+            }
+        }
+        if (szUniqueValueName[0] != L'\0')
+        {
+            wcscpy_s(szValueName, MAX_VALUE_NAME, szUniqueValueName);
+        }
+
+        // Create the new value
+        switch (dwType)
+        {
+            case REG_DWORD:
+            {
+				DWORD dwValueData = 0;
+                if (RegSetValueExW(hKey, szValueName, 0, dwType, (LPBYTE)&dwValueData, sizeof(DWORD)) == ERROR_SUCCESS)
+                {
+                    // Refresh the list view with the updated values
+					PopulateListView(hwndListView, hKey);
+                }
+				break;
+			}
+            case REG_SZ:
+            {
+                WCHAR szValueData[MAX_VALUE_NAME] = L"";
+                if (RegSetValueExW(hKey, szValueName, 0, dwType, (LPBYTE)szValueData, (lstrlen(szValueData) + 1) * sizeof(WCHAR)) == ERROR_SUCCESS)
+                {
+                    // Refresh the list view with the updated values
+                    PopulateListView(hwndListView, hKey);
+                }
+            }
+        }
+		RegCloseKey(hKey);
+	}
+
+    // Set the focus to the list view
+    SetFocus(hwndListView);
+
+    // Find the newly created item in the list view based on its name
+    LVFINDINFOW findInfo;
+    findInfo.flags = LVFI_STRING;
+    findInfo.psz = szValueName;
+    int newItemIndex = ListView_FindItem(hwndListView, -1, &findInfo);
+
+    // Begin editing the item by sending an LVM_EDITLABEL message
+    if (newItemIndex != -1)
+    {
+        ListView_EditLabel(hwndListView, newItemIndex);
+    }
+}
 
 // Функция модифицирует значение в реестре
 VOID ModifyValue(HWND hWnd)
@@ -435,7 +591,7 @@ VOID ModifyValue(HWND hWnd)
         SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
 
         HKEY hKey;
-        if (RegOpenKeyExW(GetHKeyFromString(szRootKeyName), szSubKeyPath, 0, KEY_READ | KEY_WRITE, &hKey) == ERROR_SUCCESS)
+        if (RegOpenKeyExW(GetHKEYFromString(szRootKeyName), szSubKeyPath, 0, KEY_READ | KEY_WRITE, &hKey) == ERROR_SUCCESS)
         {
             VALUE_INFO valueInfo;
             valueInfo.hKey = hKey;
@@ -455,57 +611,119 @@ VOID ModifyValue(HWND hWnd)
     }
 }
 
-// Функция удаляет значение из реестра
-VOID DeleteValue(HWND hWnd)
+// Функция переименовывает значение в реестре
+VOID RenameValue(HWND hWnd)
 {
     // Get the selected item in the list view
-    int iSelected = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED);
+	int iSelected = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED);
     if (iSelected != -1)
     {
-        // Get the name of the selected value
-        WCHAR szValueName[MAX_VALUE_NAME] = { 0 };
-        LVITEM lvi = { 0 };
-        lvi.mask = LVIF_TEXT;
-        lvi.iItem = iSelected;
-        lvi.pszText = szValueName;
-        lvi.cchTextMax = sizeof(szValueName) / sizeof(WCHAR);
-        ListView_GetItem(hwndListView, &lvi);
+		ListView_EditLabel(hwndListView, iSelected);
+	}
+}
 
-        // Get the key path from the edit control.
-        WCHAR szFullPath[MAX_PATH];
-        GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
-
-        WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
-        WCHAR szSubKeyPath[MAX_PATH] = L"";
-
-        SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
-
-        // Display a confirmation dialog box before deleting the value.
-        INT_PTR nRet = MessageBox(hWnd, L"Are you sure you want to delete this value?", L"Confirm Delete", MB_YESNO | MB_ICONWARNING);
-        if (nRet == IDYES)
+// Функция переименовывает значение из реестра через удаление старого и создание нового
+DWORD RenameRegValue(HKEY hKey, const WCHAR* szOldValueName, const WCHAR* szNewValueName)
+{
+	DWORD dwResult = ERROR_SUCCESS;
+	DWORD dwType = 0;
+	DWORD dwDataSize = 0;
+	LPBYTE lpData = NULL;
+	// Get the type and data size of the value
+	dwResult = RegQueryValueExW(hKey, szOldValueName, NULL, &dwType, NULL, &dwDataSize);
+    if (dwResult == ERROR_SUCCESS)
+    {
+		// Allocate memory for the data
+		lpData = (LPBYTE)malloc(dwDataSize);
+        if (lpData != NULL)
         {
-            HKEY hKey;
-            if (RegOpenKeyExW(GetHKeyFromString(szRootKeyName), szSubKeyPath, 0, KEY_READ | KEY_WRITE, &hKey) == ERROR_SUCCESS)
+			// Get the data
+			dwResult = RegQueryValueExW(hKey, szOldValueName, NULL, &dwType, lpData, &dwDataSize);
+            if (dwResult == ERROR_SUCCESS)
             {
-                // Delete the value
-                LONG lResult = RegDeleteValue(hKey, szValueName);
-                if (lResult == ERROR_SUCCESS)
+				// Delete the old value
+				dwResult = RegDeleteValueW(hKey, szOldValueName);
+                if (dwResult == ERROR_SUCCESS)
                 {
-                    // Remove the item from the list view
-                    ListView_DeleteItem(hwndListView, iSelected);
-                    MessageBox(NULL, L"Value deleted successfully.", L"Success", MB_OK);
-                }
-			    else
+					// Create the new value
+					dwResult = RegSetValueExW(hKey, szNewValueName, 0, dwType, lpData, dwDataSize);
+				}
+			}
+			free(lpData);
+		}
+        else
+        {
+			dwResult = ERROR_OUTOFMEMORY;
+		}
+	}
+	return dwResult;
+}
+
+// Функция удаляет значение из реестра
+VOID DeleteValues(HWND hWnd)
+{
+    // Get the selected item in the list view
+    INT iSelectedCount = ListView_GetSelectedCount(hwndListView);
+
+    INT_PTR nRet;
+    // Display a confirmation dialog box before deleting the value.
+    if (iSelectedCount == 1)
+    {
+        nRet = MessageBox(hWnd, L"Deleting certain registry values could cause system instability. Are you sure you want to permanently delete this value?", L"Confirm Value Delete", MB_YESNO | MB_ICONWARNING);
+    }
+    else if (iSelectedCount > 1) 
+    {
+        nRet = MessageBox(hWnd, L"Deleting certain registry values could cause system instability. Are you sure you want to permanently delete these values?", L"Confirm Value Delete", MB_YESNO | MB_ICONWARNING);
+    }
+    if (nRet == IDYES)
+    {
+        for (INT i = iSelectedCount - 1; i >= 0; i--)
+        {
+            INT iSelected = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED);
+            if (iSelected != -1)
+            {
+                // Get the name of the selected value
+                WCHAR szValueName[MAX_VALUE_NAME] = { 0 };
+                LVITEM lvi = { 0 };
+                lvi.mask = LVIF_TEXT;
+                lvi.iItem = iSelected;
+                lvi.pszText = szValueName;
+                lvi.cchTextMax = sizeof(szValueName) / sizeof(WCHAR);
+                ListView_GetItem(hwndListView, &lvi);
+
+                // Get the key path from the edit control.
+                WCHAR szFullPath[MAX_PATH];
+                GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+
+                WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
+                WCHAR szSubKeyPath[MAX_PATH] = L"";
+
+                SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
+
+                HKEY hKey;
+                if (RegOpenKeyExW(GetHKEYFromString(szRootKeyName), szSubKeyPath, 0, KEY_READ | KEY_WRITE, &hKey) == ERROR_SUCCESS)
                 {
-                    // Handle the error
-                    MessageBox(NULL, L"Failed to delete the selected value", L"Error", MB_OK | MB_ICONERROR);
-                    return;
+                    // Delete the value
+                    LONG lResult = RegDeleteValue(hKey, szValueName);
+                    if (lResult == ERROR_SUCCESS)
+                    {
+                        // Remove the item from the list view
+                        ListView_DeleteItem(hwndListView, iSelected);
+                    }
+                    else
+                    {
+                        // Handle the error
+                        MessageBox(NULL, L"Failed to delete the selected value", L"Error", MB_OK | MB_ICONERROR);
+                        return;
+                    }
+                    RegCloseKey(hKey);
                 }
-                RegCloseKey(hKey);
             }
         }
     }
 }
+
+
 
 //
 //  ФУНКЦИЯ: WndProc(HWND, UINT, WPARAM, LPARAM)
@@ -541,7 +759,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             // Create the ListView control
             hwndListView = CreateWindowEx(0, WC_LISTVIEW, NULL,
-                WS_CHILD | WS_VISIBLE | LVS_REPORT | WS_BORDER,
+                WS_CHILD | WS_VISIBLE | LVS_REPORT | WS_BORDER | LVS_EDITLABELS,
                 350, 140, 625, 500,
                 hWnd, (HMENU)IDC_LISTVIEW, GetModuleHandle(NULL), NULL);
 
@@ -566,7 +784,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             // Create an Edit Control
             hwndEdit = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
-                WS_CHILD | WS_VISIBLE | ES_AUTOVSCROLL | ES_AUTOHSCROLL,
+                WS_CHILD | WS_VISIBLE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
                 25, 105, 950, 25,
                 hWnd, (HMENU)IDC_MAIN_EDIT, GetModuleHandle(NULL), NULL);
 
@@ -613,11 +831,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                                 if (pNodeInfo)
                                 {
                                     wcscpy_s(szPath, pNodeInfo->szPath);
-                                    hParentKey = GetHKeyFromString(pNodeInfo->hKey);
+                                    hParentKey = GetHKEYFromString(pNodeInfo->hKey);
                                 }
                                 else {
                                     wcscpy_s(szPath, L"");
-                                    hParentKey = GetHKeyFromString(szKey);
+                                    hParentKey = GetHKEYFromString(szKey);
                                 }
 
                                 // Open the selected registry key
@@ -649,7 +867,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                                         // Construct the full path of the subkey
                                         WCHAR szhKey[MAX_ROOT_KEY_LENGTH] = { 0 };
-                                        wcscpy_s(szhKey, GetStringFromHKey(hParentKey));
+                                        wcscpy_s(szhKey, GetStringFromHKEY(hParentKey));
 
                                         WCHAR szNewPath[MAX_PATH] = { 0 };
                                         if (!lstrcmp(szPath, L""))
@@ -713,7 +931,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                             // Get the parent registry key
                             if (pNodeInfo)
                             {
-                                hParentKey = GetHKeyFromString(pNodeInfo->hKey);
+                                hParentKey = GetHKEYFromString(pNodeInfo->hKey);
                                 wcscpy_s(szPath, pNodeInfo->szPath);
 
                                 wcscpy_s(szFullPath, pNodeInfo->hKey);
@@ -722,7 +940,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                             }
                             else
                             {
-                                hParentKey = GetHKeyFromString(szKey);
+                                hParentKey = GetHKEYFromString(szKey);
                                 wcscpy_s(szPath, L"");
 
                                 wcscpy_s(szFullPath, szKey);
@@ -760,20 +978,138 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                             }
                             else if (pnkd->wVKey == VK_DELETE)
                             {
-                                DeleteValue(hWnd);
+                                DeleteValues(hWnd);
                             }
+                            else if (pnkd->wVKey == VK_F5)
+                            {
+                                UpdateListView(hWnd);
+							}
                             break;
                         }
+                        case LVN_COLUMNCLICK:
+                        {
+                            OnColumnClickEx((LPNMLISTVIEW)lParam);
+                            break;
+                        }
+                        case LVN_ENDLABELEDIT:
+                        {
+                            LV_DISPINFO* pDispInfo = (LV_DISPINFO*)lParam;
+                            if (lstrcmp(pDispInfo->item.pszText,L""))
+                            {
+
+                                LVITEM lvi = { 0 };
+                                lvi.iItem = pDispInfo->item.iItem;
+                                lvi.iSubItem = 0;
+                                lvi.mask = LVIF_TEXT | LVIF_PARAM;
+                                WCHAR szValueName[MAX_VALUE_NAME] = { 0 };
+                                lvi.pszText = szValueName;
+                                lvi.cchTextMax = MAX_VALUE_NAME;
+                                ListView_GetItem(hwndListView, &lvi);
+                                WCHAR szOldValueName[MAX_VALUE_NAME];
+                                wcscpy_s(szOldValueName, MAX_VALUE_NAME, szValueName);
+                                if (pDispInfo->item.pszText == NULL)
+                                {
+                                    pDispInfo->item.pszText = szOldValueName;
+                                }
+
+                                // Get the key path from the edit control
+                                WCHAR szFullPath[MAX_PATH];
+                                GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+                                WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
+                                WCHAR szSubKeyPath[MAX_PATH] = L"";
+                                SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
+
+                                // Check if the edited value name already exists
+                                bool isDuplicate = false;
+
+                                // Iterate through the list view items to find duplicates
+                                int itemCount = ListView_GetItemCount(hwndListView);
+                                for (int i = 0; i < itemCount; i++)
+                                {
+                                    if (i != pDispInfo->item.iItem) // Skip the currently edited item
+                                    {
+                                        lvi.iItem = i;
+                                        ListView_GetItem(hwndListView, &lvi);
+                                        if (wcscmp(pDispInfo->item.pszText, lvi.pszText) == 0)
+                                        {
+                                            isDuplicate = true;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if (isDuplicate)
+                                {
+                                    MessageBox(hWnd, L"Value name already exists!", L"Error", MB_ICONERROR);
+									return FALSE;
+								}
+
+                                HKEY hKey;
+                                if (RegOpenKeyExW(GetHKEYFromString(szRootKeyName), szSubKeyPath, 0, KEY_ALL_ACCESS, &hKey) == ERROR_SUCCESS)
+                                {
+                                    // Rename the value in the registry
+                                    if (RenameRegValue(hKey, szOldValueName, pDispInfo->item.pszText) == ERROR_SUCCESS)
+                                    {
+                                        // Refresh the list view with the updated values
+                                        PopulateListView(hwndListView, hKey);
+                                    }
+                                    RegCloseKey(hKey);
+                                    return FALSE;
+                                }
+                            }
+                            else {
+                                MessageBox(hWnd, L"Value name cannot be empty!", L"Error", MB_ICONERROR);
+                                return FALSE;
+                            }
+                            // Return TRUE to indicate that the label was handled
+                            return TRUE;
+                            break;
+                        }
+
                     }
                     break;
+                }
+                default:
+                {
+                    switch (pnmhdr->code) {
+                    case LVN_KEYDOWN:
+                    {
+                        LPNMLVKEYDOWN pLVKeyDown = (LPNMLVKEYDOWN)lParam;
+                        if (pLVKeyDown->wVKey == VK_F5) {
+                            // Get the currently selected key
+                            HTREEITEM hSelectedItem = TreeView_GetSelection(hwndTV);
+                            if (hSelectedItem)
+                            {
+                                WCHAR szFullPath[MAX_PATH];
+                                GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+                                WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
+                                WCHAR szSubKeyPath[MAX_PATH] = L"";
+                                SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
+
+                                HKEY hKey;
+                                if (RegOpenKeyExW(GetHKEYFromString(szRootKeyName), szSubKeyPath, NULL, KEY_READ, &hKey) == ERROR_SUCCESS)
+                                {
+                                    // populate the listview with the values of the selected key
+                                    PopulateListView(hWnd, hKey);
+                                    RegCloseKey(hKey);
+                                }
+                            }
+
+                            // Set the result to 1 to indicate that the message has been handled
+                            return TRUE;
+                        }
+                        break;
+                    }
+                    // Handle other list view notifications if needed
+                    // ...
+                    }
                 }
             }
         }
         case WM_COMMAND:
         {
-            int wmId = LOWORD(wParam);
             // Разобрать выбор в меню:
-            switch (wmId)
+            switch (LOWORD(wParam))
             {
                 /*
                 case IDC_MAIN_EDIT:
@@ -809,25 +1145,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
                 break;
                 */
+                case ID_CREATE_STRING_VALUE:
+                {
+                    CreateValue(hWnd, REG_SZ);
+                    break;
+                }
+                case ID_CREATE_DWORD_VALUE:
+                {
+					CreateValue(hWnd, REG_DWORD);
+					break;
+				}
                 case ID_MODIFY_VALUE:
                 {
                     ModifyValue(hWnd);
                     break;
                 }
-                case ID_DELETE_VALUE:
-                {
-                    DeleteValue(hWnd);
-                    break;
-                }
                 case ID_RENAME_VALUE:
                 {
-                    // Get the selected item in the list view
-                    int iSelected = ListView_GetNextItem(hwndListView, -1, LVNI_SELECTED);
-                    if (iSelected == -1) {
-                        MessageBox(hWnd, L"No item selected for deletion", L"Warning", MB_OK | MB_ICONWARNING);
-                        break;
-                    }
-
+                    RenameValue(hWnd);
+                    break;
+                }
+                case ID_DELETE_VALUE:
+                {
+                    DeleteValues(hWnd);
                     break;
                 }
                 case IDM_ABOUT:
@@ -851,8 +1191,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     HMENU hMenu = CreatePopupMenu(); // Create a new popup menu
                     if (hMenu)
                     {
-					// Append items to the menu. The third parameter is the item identifier which you'll use in the WM_COMMAND message.
-					AppendMenuW(hMenu, MF_STRING, ID_NEW_VALUE, L"New");
+                        // Create a submenu for the "New" item
+                        HMENU hSubMenu = CreatePopupMenu();
+                        if (hSubMenu)
+                        {
+                            // Append items to the submenu
+                            AppendMenuW(hSubMenu, MF_STRING, ID_CREATE_STRING_VALUE, L"String Value");
+                            AppendMenuW(hSubMenu, MF_STRING, ID_CREATE_DWORD_VALUE, L"DWORD (32-bit) Value");
+
+                            // Append the "New" item with the submenu
+                            AppendMenuW(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, L"New");
+                        }
 					// Get the current mouse position
 					POINT pt;
 					GetCursorPos(&pt);
@@ -951,12 +1300,14 @@ INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARA
                     // Get the text from the edit control and set it as the new value data.
                     WCHAR szData[MAX_VALUE_NAME];
                     GetDlgItemText(hDlg, IDC_DIALOG_EDIT_STRING_VALUE, szData, MAX_VALUE_NAME);
-                    if (RegSetValueEx(pValueInfo->hKey, pValueInfo->szValueName, 0, pValueInfo->dwType, (const BYTE*)szData, (DWORD)((wcslen(szData) + 1) * sizeof(WCHAR))) == ERROR_SUCCESS)
+                    if (RegSetValueExW(pValueInfo->hKey, pValueInfo->szValueName, 0, pValueInfo->dwType, (const BYTE*)szData, (DWORD)((wcslen(szData) + 1) * sizeof(WCHAR))) == ERROR_SUCCESS)
                     {
-                        MessageBox(hDlg, L"Value updated successfully.", L"Success", MB_OK | MB_ICONINFORMATION);
+                        // Refresh the list view with the updated values
+                        PopulateListView(hwndListView, pValueInfo->hKey);
                     }
                     else
                     {
+                        // Handle error
                         MessageBox(hDlg, L"Failed to update value.", L"Error", MB_OK | MB_ICONERROR);
                     }
 
@@ -1025,18 +1376,21 @@ INT_PTR CALLBACK EditDwordDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
                     if (bTranslated)
                     {
                         // Set the new value.
-                        if (RegSetValueEx(hKey, szValueName, 0, REG_DWORD, (const BYTE*)&dwNewValue, sizeof(dwNewValue)) == ERROR_SUCCESS)
+                        if (RegSetValueExW(hKey, szValueName, 0, REG_DWORD, (const BYTE*)&dwNewValue, sizeof(dwNewValue)) == ERROR_SUCCESS)
                         {
-                            MessageBox(hDlg, L"Value updated successfully.", L"Success", MB_OK | MB_ICONINFORMATION);
+                            // Refresh the list view with the updated values
+                            PopulateListView(hwndListView, hKey);
                             EndDialog(hDlg, IDOK);
                         }
                         else
                         {
+                            // Handle error
                             MessageBox(hDlg, L"Failed to update value", NULL, MB_ICONERROR | MB_OK);
                         }
                     }
                     else
                     {
+                        // Handle error
                         MessageBox(hDlg, L"Invalid value.", NULL, MB_ICONERROR | MB_OK);
                     }
                     return TRUE;
