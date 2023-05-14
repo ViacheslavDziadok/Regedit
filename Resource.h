@@ -6,14 +6,11 @@
 #define IDM_ABOUT                               104
 #define IDM_EXIT                                105
 #define IDI_SMALL                               108
-#define IDD_ADD_KEY                             118
-#define IDD_ADD_VALUE                           123
 #define IDD_SEARCH                              126
 #define IDC_REGEDIT                             127
 #define IDI_REGEDIT                             128
 #define IDD_DIALOG_EDIT_DWORD                   134
 #define IDD_DIALOG_EDIT_STRING                  135
-#define IDM_SEARCH                              40000
 #define IDS_APP_TITLE                           40000
 #define IDC_TREEVIEW                            100
 #define IDC_LISTVIEW                            200
@@ -24,6 +21,9 @@
 #define IDC_DIALOG_EDIT_DWORD_VALUE             302
 #define IDC_DIALOG_EDIT_DWORD_HEXBASE           303
 #define IDC_DIALOG_EDIT_DWORD_DECIMALBASE       304
+#define IDC_DIALOG_SEARCH_NAME					401
+#define IDC_DIALOG_SEARCH_KEYS					402
+#define IDC_DIALOG_SEARCH_VALUES				403
 #define IDM_KEY_EXPAND_COLLAPSE                 801
 #define IDM_NEW_KEY		                        802
 #define IDM_FIND                                803

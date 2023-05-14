@@ -18,11 +18,7 @@ IDC_REGEDIT MENU
 {
     POPUP "&Файл"
     {
-        MENUITEM "Найти", 0
-        MENUITEM "Добавить ключ", 0
-        MENUITEM "Добавить запись", 0
-        MENUITEM "Удалить ключ", 0
-        MENUITEM "Удалить запись", 0
+        MENUITEM "Найти", IDM_FIND
         MENUITEM "Вы&ход", IDM_EXIT
     }
     POPUP "&Справка"
@@ -46,40 +42,6 @@ FONT 8, "MS Shell Dlg", 0, 0, 1
     LTEXT           "Regedit, Версия 1.0", IDC_STATIC, 42, 14, 66, 9, SS_LEFT | SS_NOPREFIX, WS_EX_LEFT
     LTEXT           "Абдулова Айжан (c) 2023", IDC_STATIC, 42, 26, 112, 9, SS_LEFT, WS_EX_LEFT
     DEFPUSHBUTTON   "ОК", IDOK, 113, 41, 50, 14, WS_GROUP, WS_EX_LEFT
-}
-
-
-
-LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
-IDD_ADD_KEY DIALOG 0, 0, 186, 95
-STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
-CAPTION "Добавить ключ"
-FONT 8, "Ms Shell Dlg"
-{
-    PUSHBUTTON      "Отменить", IDCANCEL, 136, 41, 45, 14, 0, WS_EX_LEFT
-    DEFPUSHBUTTON   "Добавить", IDOK, 135, 21, 46, 14, 0, WS_EX_LEFT
-    LTEXT           "Введите название ключа:", 0, 10, 7, 88, 9, SS_LEFT, WS_EX_LEFT
-    EDITTEXT        0, 9, 20, 116, 14, ES_AUTOHSCROLL, WS_EX_LEFT
-    LTEXT           "Адрес нового ключа:", 0, 11, 44, 72, 9, SS_LEFT, WS_EX_LEFT
-    LTEXT           "HKEY_CURRENT_USER/SOFTWARE", 0, 10, 60, 162, 21, SS_LEFT, WS_EX_LEFT
-}
-
-
-
-LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
-IDD_ADD_VALUE DIALOG 0, 0, 186, 107
-STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
-CAPTION "Добавить запись"
-FONT 8, "Ms Shell Dlg"
-{
-    COMBOBOX        0, 9, 49, 116, 30, CBS_DROPDOWNLIST | CBS_HASSTRINGS, WS_EX_LEFT
-    PUSHBUTTON      "Отменить", IDCANCEL, 135, 49, 45, 14, 0, WS_EX_LEFT
-    DEFPUSHBUTTON   "Добавить", IDOK, 135, 18, 46, 14, 0, WS_EX_LEFT
-    LTEXT           "Введите название записи:", 0, 10, 7, 91, 9, SS_LEFT, WS_EX_LEFT
-    EDITTEXT        0, 9, 18, 116, 14, ES_AUTOHSCROLL, WS_EX_LEFT
-    LTEXT           "Адрес новой записи:", 0, 11, 65, 72, 9, SS_LEFT, WS_EX_LEFT
-    LTEXT           "HKEY_CURRENT_USER/SOFTWARE", 0, 10, 79, 162, 22, SS_LEFT, WS_EX_LEFT
-    LTEXT           "Выберите тип записи:", 0, 10, 37, 76, 9, SS_LEFT, WS_EX_LEFT
 }
 
 
@@ -125,13 +87,13 @@ STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VIS
 CAPTION "Поиск"
 FONT 8, "Ms Shell Dlg"
 {
-    AUTOCHECKBOX    "Ключи", 0, 13, 54, 37, 8, 0, WS_EX_LEFT
+    AUTOCHECKBOX    "Ключи", 402, 13, 54, 37, 8, 0, WS_EX_LEFT
     GROUPBOX        "Искать", 0, 9, 41, 116, 40, 0, WS_EX_LEFT
     PUSHBUTTON      "Отменить", IDCANCEL, 130, 44, 48, 14, 0, WS_EX_LEFT
     DEFPUSHBUTTON   "Найти", IDOK, 129, 23, 49, 14, 0, WS_EX_LEFT
     LTEXT           "Введите название для поиска:", 0, 10, 10, 105, 9, SS_LEFT, WS_EX_LEFT
-    EDITTEXT        0, 9, 23, 116, 14, ES_AUTOHSCROLL, WS_EX_LEFT
-    AUTOCHECKBOX    "Записи", 0, 13, 66, 41, 8, 0, WS_EX_LEFT
+    EDITTEXT        401, 9, 23, 116, 14, ES_AUTOHSCROLL, WS_EX_LEFT
+    AUTOCHECKBOX    "Записи", 403, 13, 66, 41, 8, 0, WS_EX_LEFT
 }
 
 
@@ -156,7 +118,7 @@ IDC_REGEDIT ACCELERATORS
 {
     "?",            IDM_ABOUT, ASCII, ALT
     "/",            IDM_ABOUT, ASCII, ALT
-    "f",            IDM_SEARCH, ASCII, CONTROL
+    "f",            IDM_FIND, ASCII, CONTROL
 }
 
 
