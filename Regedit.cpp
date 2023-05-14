@@ -24,32 +24,41 @@ ATOM                MyRegisterClass(HINSTANCE);
 BOOL                InitInstance(HINSTANCE, INT);
 
 CONST WCHAR*        GetStringFromHKEY(CONST HKEY&);
-HKEY                GetHKEYFromString(CONST WCHAR*);
+CONST HKEY          GetHKEYFromString(CONST WCHAR*);
 CONST WCHAR*        RegTypeToString(CONST DWORD);
-LPWSTR              RegDataToString(CONST DWORD, CONST BYTE*, CONST DWORD);
+CONST WCHAR*        RegDataToString(CONST DWORD, CONST BYTE*, CONST DWORD);
 VOID                SeparateFullPath(WCHAR[MAX_PATH], WCHAR[MAX_PATH], WCHAR[MAX_PATH]);
 
 VOID                CreateTreeView(HWND);
 VOID                CreateRootKeys();
 VOID                CreateListView(HWND);
 VOID                CreateAddressField(HWND);
+
 VOID                ExpandKey(CONST LPARAM&);
 VOID                ShowKeyValues(CONST LPARAM&);
 VOID                DeleteTreeItemsRecursively(HWND, HTREEITEM);
-INT                 CompareValueNamesEx(LPARAM, LPARAM, LPARAM);
+UINT                CompareValueNamesEx(LPARAM, LPARAM, LPARAM);
 VOID                OnColumnClickEx(CONST LPARAM&);
-BOOL				OnEndLabelEditEx(HWND, CONST LPARAM&);
+BOOL				OnEndLabelEditKeyEx(HWND, CONST LPARAM&);
+BOOL				OnEndLabelEditValueEx(HWND, CONST LPARAM&);
 VOID                PopulateListView(HWND, CONST HKEY&);
 VOID                UpdateListView(HWND);
 VOID                RefreshListView(HWND, CONST LPARAM&);
-
+VOID                SelectClickedKey();
+VOID                ShowKeyMenu(HWND);
+VOID                AddMenuOption(HMENU, LPCWSTR, UINT, UINT);
 VOID                ShowNewValueMenu(HWND);
 VOID                ShowEditValueMenu(HWND);
+
+VOID                CreateKey(HWND);
+VOID                RenameKey(HWND);
+VOID                DeleteKey(HWND);
 VOID                CreateValue(HWND, CONST DWORD);
 VOID                ModifyValue(HWND);
 VOID                RenameValue(HWND);
-DWORD               RenameRegValue(CONST HKEY&, CONST WCHAR*, CONST WCHAR*);
-VOID                DeleteValues(HWND);
+CONST DWORD         RenameRegValue(CONST HKEY&, CONST WCHAR*, CONST WCHAR*);
+VOID                DeleteValues(HWND); 
+
 
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    EditStringDlgProc(HWND, UINT, WPARAM, LPARAM);
@@ -210,7 +219,7 @@ CONST WCHAR* GetStringFromHKEY(CONST HKEY& hKey)
 }
 
 // Функция для получения HKEY из строки
-HKEY GetHKEYFromString(CONST WCHAR* szKey)
+CONST HKEY GetHKEYFromString(CONST WCHAR* szKey)
 {
     if (lstrcmp(szKey, L"HKEY_CLASSES_ROOT") == 0)
         return HKEY_CLASSES_ROOT;
@@ -261,7 +270,7 @@ CONST WCHAR* RegTypeToString(CONST DWORD dwType)
 }
 
 // Функция конвертирует данные реестра в строку
-LPWSTR RegDataToString(CONST BYTE* data, CONST DWORD dwType, CONST DWORD dwDataSize)
+CONST WCHAR* RegDataToString(CONST BYTE* data, CONST DWORD dwType, CONST DWORD dwDataSize)
 {
     static WCHAR buffer[MAX_VALUE_NAME];
 
@@ -312,7 +321,7 @@ VOID CreateTreeView(HWND hWnd)
 {
     // Create the TreeView control
     hWndTV = CreateWindowEx(0, WC_TREEVIEW, NULL,
-        WS_VISIBLE | WS_CHILD | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_HASLINES | WS_BORDER,
+        WS_VISIBLE | WS_CHILD | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_HASLINES | WS_BORDER | TVS_EDITLABELS,
         25, 140, 300, 500,
         hWnd, (HMENU)IDC_TREEVIEW, GetModuleHandle(NULL), NULL);
 
@@ -419,6 +428,8 @@ VOID CreateAddressField(HWND hWnd)
     SendMessage(hWndEV, WM_SETFONT, (WPARAM)hfDefault, 0);
 }
 
+
+
 // Функция раскрывает ключ в дереве реестра
 VOID ExpandKey(CONST LPARAM& lParam)
 {
@@ -471,7 +482,7 @@ VOID ExpandKey(CONST LPARAM& lParam)
             WCHAR szSubkey[MAX_KEY_LENGTH];
             DWORD dwIndex = 0;
             DWORD cchSubkey = MAX_KEY_LENGTH;
-            while (RegEnumKeyEx(hKey, dwIndex, szSubkey, &cchSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
+            while (RegEnumKeyExW(hKey, dwIndex, szSubkey, &cchSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
             {
                 HKEY hSubKey;
                 BOOL hasChildren = FALSE;
@@ -600,7 +611,7 @@ VOID DeleteTreeItemsRecursively(HWND hwndTV, HTREEITEM hItem)
 }
 
 // Функция сравнения имён двух элементов дерева
-INT CompareValueNamesEx(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort)
+UINT CompareValueNamesEx(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort)
 {
     TREE_NODE_DATA* data = (TREE_NODE_DATA*)lParamSort;
 
@@ -637,7 +648,48 @@ VOID OnColumnClickEx(CONST LPARAM& lParam)
     ListView_SortItemsEx(pLVInfo->hdr.hwndFrom, CompareValueNamesEx, &data);
 }
 
-BOOL OnEndLabelEditEx(HWND hWnd, CONST LPARAM& lParam)
+// Функция обрабатывает смену имени ключа
+BOOL OnEndLabelEditKeyEx(HWND hWnd, CONST LPARAM& lParam)
+{
+    LPNMTVDISPINFOW pTVInfo = (LPNMTVDISPINFOW)lParam;
+    if (pTVInfo->item.pszText != NULL)
+    {
+		PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)pTVInfo->item.lParam;
+		HKEY hKey = GetHKEYFromString(pNodeInfo->hKey);
+        WCHAR szOldPath[MAX_PATH] = { 0 };
+		wcscpy_s(szOldPath, pNodeInfo->szPath);
+        WCHAR szNewPath[MAX_PATH] = { 0 };
+        WCHAR* lastSlash = wcsrchr(szOldPath, L'\\');
+        if (lastSlash)
+        {
+            size_t newPathLen = lastSlash - szOldPath + 1; // +1 to include the slash
+            wcsncpy_s(szNewPath, MAX_PATH, szOldPath, newPathLen); // copy up to and including the slash
+            wcscat_s(szNewPath, MAX_PATH, pTVInfo->item.pszText); // append the new key name
+        }
+        if (RegRenameKey(hKey, szOldPath, pTVInfo->item.pszText) == ERROR_SUCCESS)
+        {
+			wcscpy_s(pNodeInfo->szPath, szNewPath);
+            // Update the Edit Control
+            WCHAR* szFullPath = new WCHAR[MAX_PATH];
+            wcscpy_s(szFullPath, MAX_PATH, pNodeInfo->hKey);
+            wcscat_s(szFullPath, MAX_PATH, L"\\");
+            wcscat_s(szFullPath, MAX_PATH, szNewPath);
+            SendMessage(hWndEV, WM_SETTEXT, 0, (LPARAM)szFullPath);
+            // Refresh the list view with the updated values
+            PopulateListView(hWndLV, hKey);
+            delete[] szFullPath;
+		}
+        else
+        {
+			MessageBox(hWnd, L"Failed to rename key", L"Error", MB_OK | MB_ICONERROR);
+        }
+	}
+
+	return TRUE;
+}
+
+// Функция обрабатывает смену имени значения
+BOOL OnEndLabelEditValueEx(HWND hWnd, CONST LPARAM& lParam)
 {
     NMLVDISPINFOW* pLVDispInfo = (NMLVDISPINFOW*)lParam;
     if (lstrcmp(pLVDispInfo->item.pszText, L""))
@@ -749,7 +801,7 @@ VOID PopulateListView(HWND hwndLV, CONST HKEY& hKey)
 
         // Insert the value data.
         lvi.iSubItem = 2;
-        lvi.pszText = RegDataToString(data, dwType, dwDataSize);
+        lvi.pszText = (LPWSTR)RegDataToString(data, dwType, dwDataSize);
         ListView_SetItem(hwndLV, &lvi);
 
         dwIndex++;
@@ -819,6 +871,66 @@ VOID RefreshListView(HWND hWnd, CONST LPARAM& lParam)
     }
 }
 
+// Функция выбирает элемент дерева по щелчку правой кнопкой мыши
+VOID SelectClickedKey()
+{
+    // Get the position of the right-click
+    POINT pt;
+    GetCursorPos(&pt);
+
+    // Convert the client coordinates to the tree view coordinates
+    ScreenToClient(hWndTV, &pt);
+
+    // Perform hit testing to determine the item under the cursor
+    TVHITTESTINFO htInfo;
+    htInfo.pt = pt;
+    TreeView_HitTest(hWndTV, &htInfo);
+
+    // Check if a tree view item was clicked
+    if (htInfo.hItem != NULL)
+    {
+        // Select the item under the cursor
+        TreeView_SelectItem(hWndTV, htInfo.hItem);
+    }
+}
+
+// Функция показывает контекстное меню для ключа
+VOID ShowKeyMenu(HWND hWnd)
+{
+    // Create the context menu
+    HMENU hContextMenu = CreatePopupMenu();
+    if (hContextMenu != NULL)
+    {
+        HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
+        // Add the menu items
+        BOOL bExpanded = TreeView_GetItemState(hWndTV, hSelectedItem, TVIS_EXPANDED) & TVIS_EXPANDED;
+        AddMenuOption(hContextMenu, bExpanded ? L"Collapse" : L"Expand", IDM_KEY_EXPAND_COLLAPSE, MF_STRING);
+        AddMenuOption(hContextMenu, L"New Key", IDM_NEW_KEY, MF_STRING);
+        AddMenuOption(hContextMenu, L"Find", IDM_FIND, MF_STRING);
+        AddMenuOption(hContextMenu, L"Delete", IDM_DELETE_KEY, MF_STRING);
+        AddMenuOption(hContextMenu, L"Rename", IDM_RENAME_KEY, MF_STRING);
+
+        // Get the current mouse position
+        POINT pt;
+        GetCursorPos(&pt);
+        // Track the context menu
+        TrackPopupMenu(hContextMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hWnd, NULL);
+        // Destroy the menu after we're done with it
+        DestroyMenu(hContextMenu);
+    }
+}
+
+// Функция добавляет пункт меню для ключа
+VOID AddMenuOption(HMENU hMenu, LPCWSTR lpText, UINT uID, UINT uFlags)
+{
+    MENUITEMINFOW mii = { 0 };
+    mii.cbSize = sizeof(MENUITEMINFO);
+    mii.fMask = MIIM_STRING | MIIM_ID | MIIM_STATE;
+    mii.fState = uFlags;
+    mii.wID = uID;
+    mii.dwTypeData = (LPWSTR)lpText;
+    InsertMenuItemW(hMenu, -1, TRUE, &mii);
+}
 
 // Функция показывает контекстное меню для создания нового значения
 VOID ShowNewValueMenu(HWND hWnd)
@@ -833,8 +945,8 @@ VOID ShowNewValueMenu(HWND hWnd)
         if (hSubMenu)
         {
             // Append items to the submenu
-            AppendMenuW(hSubMenu, MF_STRING, ID_CREATE_STRING_VALUE, L"String Value");
-            AppendMenuW(hSubMenu, MF_STRING, ID_CREATE_DWORD_VALUE, L"DWORD (32-bit) Value");
+            AppendMenuW(hSubMenu, MF_STRING, IDM_CREATE_STRING_VALUE, L"String Value");
+            AppendMenuW(hSubMenu, MF_STRING, IDM_CREATE_DWORD_VALUE, L"DWORD (32-bit) Value");
 
             // Append the "New" item with the submenu
             AppendMenuW(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, L"New");
@@ -857,9 +969,9 @@ VOID ShowEditValueMenu(HWND hWnd)
     if (hMenu)
     {
         // Append items to the menu. The third parameter is the item identifier which you'll use in the WM_COMMAND message.
-        AppendMenuW(hMenu, MF_STRING, ID_MODIFY_VALUE, L"Modify");
-        AppendMenuW(hMenu, MF_STRING, ID_DELETE_VALUE, L"Delete");
-        AppendMenuW(hMenu, MF_STRING, ID_RENAME_VALUE, L"Rename");
+        AppendMenuW(hMenu, MF_STRING, IDM_MODIFY_VALUE, L"Modify");
+        AppendMenuW(hMenu, MF_STRING, IDM_DELETE_VALUE, L"Delete");
+        AppendMenuW(hMenu, MF_STRING, IDM_RENAME_VALUE, L"Rename");
 
         // Get the current mouse position
         POINT pt;
@@ -870,6 +982,175 @@ VOID ShowEditValueMenu(HWND hWnd)
 
         // Destroy the menu after we're done with it
         DestroyMenu(hMenu);
+    }
+}
+
+
+
+// Функция создает новый ключ
+VOID CreateKey(HWND hWnd)
+{
+    // Get the key path from the edit control.
+    WCHAR szFullPath[MAX_PATH];
+    GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+
+    WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
+    WCHAR szSubKeyPath[MAX_PATH] = L"";
+
+    SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
+
+    // Open the parent key
+    HKEY hParentKey;
+    if (RegOpenKeyExW(GetHKEYFromString(szRootKeyName), szSubKeyPath, 0, KEY_ALL_ACCESS, &hParentKey) == ERROR_SUCCESS)
+    {
+        // Generate a new key name
+        WCHAR* szKeyName = new WCHAR[MAX_VALUE_NAME];
+        wcscpy_s(szKeyName, MAX_VALUE_NAME, L"New Key");
+
+        // Generate a unique value name
+        WCHAR* szUniqueKeyName = new WCHAR[MAX_VALUE_NAME];
+        wcscpy_s(szUniqueKeyName, MAX_VALUE_NAME, szKeyName);
+
+        int index = 1;
+        // Enumerate subkeys
+        WCHAR szSubkey[MAX_KEY_LENGTH];
+        DWORD dwIndex = 0;
+        DWORD cchSubkey = MAX_KEY_LENGTH;
+        while (RegEnumKeyExW(hParentKey, dwIndex, szSubkey, &cchSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
+        {
+            if (wcscmp(szSubkey, szUniqueKeyName) == 0)
+            {
+                // Value name exists, generate a new one
+                swprintf_s(szUniqueKeyName, MAX_VALUE_NAME, L"%s #%d", szKeyName, index);
+                index++;
+
+                HKEY hNewKey;
+                // Check if the newly generated value name is unique
+                if (RegOpenKeyExW(hParentKey, szUniqueKeyName, 0, KEY_READ, &hNewKey) != ERROR_SUCCESS)
+                {
+                    // Unique value name found, break out of the loop
+                    wcscpy_s(szKeyName, MAX_VALUE_NAME, szUniqueKeyName);
+                    RegCloseKey(hNewKey);
+                    break;
+                }
+                else
+                {
+                    RegCloseKey(hNewKey);
+                }
+			}
+            // Reset variables for next subkey
+            dwIndex++;
+            cchSubkey = MAX_KEY_LENGTH;
+        }
+        if (wcscmp(szUniqueKeyName, L"") != 0)
+        {
+            wcscpy_s(szKeyName, MAX_VALUE_NAME, szUniqueKeyName);
+        }
+
+        // Create the new key under the parent key
+        HKEY hNewKey;
+        if (RegCreateKeyExW(hParentKey, szKeyName, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hNewKey, NULL) == ERROR_SUCCESS)
+        {
+            // Close the new key
+            RegCloseKey(hNewKey);
+
+            // Retrieve the selected item in the tree view
+            HTREEITEM hParentItem = TreeView_GetSelection(hWndTV);
+
+            // Create the new key in the tree view
+            TVINSERTSTRUCT insertStruct;
+            insertStruct.hParent = hParentItem;
+            insertStruct.hInsertAfter = TVI_LAST;
+            insertStruct.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_PARAM;
+            insertStruct.item.pszText = szKeyName;
+            insertStruct.item.cChildren = 0;
+            insertStruct.item.iImage = 0;               // папка
+            insertStruct.item.iSelectedImage = 0;       // открытая папка
+
+            // Считаем количество дочерних элементов
+            int count = 0;
+            HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hParentItem);
+
+            while (hChildItem)
+            {
+                count++;
+                hChildItem = TreeView_GetNextSibling(hWndTV, hChildItem);
+            }
+
+            // Set the parent node to have children
+            TVITEM parentItem;
+            parentItem.mask = TVIF_HANDLE | TVIF_CHILDREN;
+            parentItem.hItem = hParentItem;
+            parentItem.cChildren = count + 1;
+
+            // Update the parent item
+            TreeView_SetItem(hWndTV, &parentItem);
+
+            // Construct the full path of the subkey
+            WCHAR* szhKey = new WCHAR[MAX_PATH];
+
+            swprintf_s(szhKey, MAX_PATH, L"%s\\%s", szSubKeyPath, szKeyName);
+
+            // Allocate memory for node info
+            PTREE_NODE_INFO pNodeInfo = new TREE_NODE_INFO;
+            wcscpy_s(pNodeInfo->hKey, MAX_KEY_LENGTH, szRootKeyName);
+            wcscpy_s(pNodeInfo->szPath, MAX_PATH, szhKey);
+
+            insertStruct.item.lParam = (LPARAM)pNodeInfo;
+            HTREEITEM hTreeItem = TreeView_InsertItem(hWndTV, &insertStruct);
+
+            // Expand the parent item to show the new key
+            TreeView_Expand(hWndTV, hParentItem, TVE_EXPAND);
+            // Select the new key
+            TreeView_SelectItem(hWndTV, hTreeItem);
+            // Start editing the label of the new key
+            TreeView_EditLabel(hWndTV, hTreeItem);
+
+            // Free memory
+            delete[] szhKey;
+        }
+        RegCloseKey(hParentKey);
+    }
+}
+
+// Функция удаления ключа
+VOID DeleteKey(HWND hWnd)
+{
+    // Retrieve the selected item in the tree view
+    HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
+
+    // Delete the key associated with the selected item from the registry
+    if (hSelectedItem != NULL)
+    {
+        INT_PTR nRet = 0;
+        // Display a confirmation dialog box before deleting the value.
+        nRet = MessageBox(hWnd, L"Deleting certain registry keys could cause system instability. Are you sure you want to permanently delete this key and all of its subkeys?", L"Confirm Key Delete", MB_YESNO | MB_ICONWARNING);
+        if (nRet == IDYES)
+        {
+            // Get the associated data of the selected item (if any)
+            TVITEM item;
+            item.hItem = hSelectedItem;
+            item.mask = TVIF_PARAM;
+            TreeView_GetItem(hWndTV, &item);
+            PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)item.lParam;
+
+            // Delete the key from the registry
+            if (pNodeInfo != NULL)
+            {
+                HKEY hParentKey = GetHKEYFromString(pNodeInfo->hKey);
+                const WCHAR* szSubKeyPath = pNodeInfo->szPath;
+
+                // Delete the key
+                if (RegDeleteTreeW(hParentKey, szSubKeyPath) == ERROR_SUCCESS)
+                {
+                    // Step 6: Update the tree view to remove the deleted item
+                    TreeView_DeleteItem(hWndTV, hSelectedItem);
+                }
+            }
+
+            // Step 6: Update the tree view to remove the deleted item
+            TreeView_DeleteItem(hWndTV, hSelectedItem);
+        }
     }
 }
 
@@ -1033,8 +1314,19 @@ VOID RenameValue(HWND hWnd)
 	}
 }
 
+// Функция переименовывает ключ в реестре
+VOID RenameKey(HWND hWnd)
+{
+    // Get the selected item in the list view
+    HTREEITEM hSelected = TreeView_GetSelection(hWndTV);
+    if (hSelected != NULL)
+    {
+        TreeView_EditLabel(hWndTV, hSelected);
+    }
+}
+
 // Функция переименовывает значение из реестра через удаление старого и создание нового
-DWORD RenameRegValue(CONST HKEY& hKey, CONST WCHAR* szOldValueName, CONST WCHAR* szNewValueName)
+CONST DWORD RenameRegValue(CONST HKEY& hKey, CONST WCHAR* szOldValueName, CONST WCHAR* szNewValueName)
 {
 	DWORD dwResult = ERROR_SUCCESS;
 	DWORD dwType = 0;
@@ -1174,6 +1466,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     // Handle treeview notifications
                     switch (pnmhdr->code)
                     {
+                        case TVN_KEYDOWN:
+                        {
+                            LPNMLVKEYDOWN pnkd = (LPNMLVKEYDOWN)pnmhdr;
+                             if (pnkd->wVKey == VK_DELETE)
+                            {
+                                DeleteKey(hWnd);
+                            }
+                            break;
+                        }
                         // on expanding of a treeview item
                         case TVN_ITEMEXPANDING:
                         {
@@ -1184,6 +1485,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                         case TVN_SELCHANGED:
                         {
                             ShowKeyValues(lParam);
+                            break;
+                        }
+                        case TVN_ENDLABELEDIT:
+                        {
+                            return OnEndLabelEditKeyEx(hWnd, lParam);
                             break;
                         }
                     }
@@ -1222,7 +1528,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                         }
                         case LVN_ENDLABELEDIT:
                         {
-                            return OnEndLabelEditEx(hWnd, lParam);
+                            return OnEndLabelEditValueEx(hWnd, lParam);
                             break;
                         }
 
@@ -1283,27 +1589,56 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
                 break;
                 */
-                case ID_CREATE_STRING_VALUE:
+                case IDM_KEY_EXPAND_COLLAPSE:
+                {
+                    // Handle Expand/Collapse menu item
+                    HTREEITEM hSelected = TreeView_GetSelection(hWndTV);
+                    // Toggle the item's state
+                    BOOL bExpanded = TreeView_GetItemState(hWndTV, hSelected, TVIS_EXPANDED) & TVIS_EXPANDED;
+                    TreeView_Expand(hWndTV, hSelected, bExpanded ? TVE_COLLAPSE : TVE_EXPAND);
+                    break;
+                }
+                case IDM_NEW_KEY:
+                {
+                    CreateKey(hWnd);
+					break;
+				}
+                case IDM_FIND:
+                {
+                    // OpenSearchWindow();
+                    break;
+                }
+                case IDM_DELETE_KEY:
+                {
+                    DeleteKey(hWnd);
+                    break;
+                }
+                case IDM_RENAME_KEY:
+                {
+                    RenameKey(hWnd);
+                    break;
+                }
+                case IDM_CREATE_STRING_VALUE:
                 {
                     CreateValue(hWnd, REG_SZ);
                     break;
                 }
-                case ID_CREATE_DWORD_VALUE:
+                case IDM_CREATE_DWORD_VALUE:
                 {
 					CreateValue(hWnd, REG_DWORD);
 					break;
 				}
-                case ID_MODIFY_VALUE:
+                case IDM_MODIFY_VALUE:
                 {
                     ModifyValue(hWnd);
                     break;
                 }
-                case ID_RENAME_VALUE:
+                case IDM_RENAME_VALUE:
                 {
                     RenameValue(hWnd);
                     break;
                 }
-                case ID_DELETE_VALUE:
+                case IDM_DELETE_VALUE:
                 {
                     DeleteValues(hWnd);
                     break;
@@ -1332,6 +1667,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     ShowEditValueMenu(hWnd);
                 }
             }
+            else if ((HWND)wParam == hWndTV)
+            {
+                SelectClickedKey();
+
+				ShowKeyMenu(hWnd);
+			}
             break;
         }
         case WM_PAINT:
