@@ -131,15 +131,11 @@
   <ItemGroup>
     <ClInclude Include="Regedit.h" />
     <ClInclude Include="framework.h" />
-    <ClInclude Include="regedit.hpp" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Regedit.cpp" />
-    <ClCompile Include="example.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Regedit.rc" />
