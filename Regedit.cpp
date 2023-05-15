@@ -3,7 +3,7 @@
 
 #include "framework.h"
 #include "Regedit.h"
-#include "example.cpp"
+#include "string"
 #include <Commctrl.h>
 
 #define MAX_LOADSTRING 100
@@ -21,7 +21,7 @@ HWND hWndEV;
 
 // Отправить объявления функций, включенных в этот модуль кода:
 ATOM                MyRegisterClass(HINSTANCE);
-BOOL                InitInstance(HINSTANCE, INT);
+HWND                InitInstance(HINSTANCE, INT);
 
 CONST WCHAR*        GetStringFromHKEY(CONST HKEY&);
 CONST HKEY          GetHKEYFromString(CONST std::wstring&);
@@ -29,10 +29,11 @@ CONST WCHAR*        RegTypeToString(CONST DWORD);
 CONST WCHAR*        RegDataToString(CONST DWORD, CONST BYTE*, CONST DWORD);
 VOID                SeparateFullPath(WCHAR[MAX_PATH], WCHAR[MAX_PATH], WCHAR[MAX_PATH]);
 
+VOID                CreateTestKeysAndValues(HWND);
+VOID                CreateAddressField(HWND);
 VOID                CreateTreeView(HWND);
 VOID                CreateRootKeys();
 VOID                CreateListView(HWND);
-VOID                CreateAddressField(HWND);
 
 VOID                ExpandKey(CONST LPARAM&);
 VOID                ShowKeyValues(CONST LPARAM&);
@@ -47,8 +48,8 @@ INT_PTR				OnEndLabelEditValueEx(HWND, CONST LPARAM&);
 LPWSTR			    SearchRegistry(CONST HKEY&, CONST WCHAR*, CONST WCHAR*, CONST WCHAR*, CONST BOOL);
 VOID                ExpandTreeViewToPath(CONST WCHAR*);
 VOID                PopulateListView(HWND, CONST HKEY&);
+VOID                UpdateTreeView(HWND);
 VOID                UpdateListView(HWND);
-VOID                RefreshListView(HWND, CONST LPARAM&);
 VOID                SelectClickedKey();
 VOID                ShowKeyMenu(HWND);
 VOID                AddMenuOption(HMENU, LPCWSTR, UINT, UINT);
@@ -85,10 +86,7 @@ INT APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     MyRegisterClass(hInstance);
 
     // Выполнить инициализацию приложения:
-    if (!InitInstance (hInstance, nCmdShow))
-    {
-        return FALSE;
-    }
+    HWND hMainWnd = InitInstance(hInstance, nCmdShow);
 
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_REGEDIT));
 
@@ -97,7 +95,7 @@ INT APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // Цикл основного сообщения:
     while (GetMessage(&msg, nullptr, 0, 0))
     {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
+        if (!TranslateAccelerator(hMainWnd, hAccelTable, &msg))
         {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
@@ -143,7 +141,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 //        В этой функции маркер экземпляра сохраняется в глобальной переменной, а также
 //        создается и выводится главное окно программы.
 //
-BOOL InitInstance(HINSTANCE hInstance, INT nCmdShow)
+HWND InitInstance(HINSTANCE hInstance, INT nCmdShow)
 {
    hInst = hInstance; // Сохранить маркер экземпляра в глобальной переменной
 
@@ -153,17 +151,25 @@ BOOL InitInstance(HINSTANCE hInstance, INT nCmdShow)
    HWND hWndLabelMain = CreateWindowW(L"STATIC", L"Приветствуем в Редакторе Реестра Windows. Для продолжения работы, выберите желаемую функцию и введите требуемые параметры.\r\nВНИМАНИЕ: Программа позволяет редактировать любые незащищённые данные реестра Windows. Соблюдайте осторожность при работе.",
        WS_VISIBLE | WS_CHILD | WS_BORDER, 25, 30, 950, 40, hWnd, NULL, hInstance, NULL);
 
-   testValues();
-
    if (!hWnd)
    {
       return FALSE;
    }
 
+   // Set image list for treeview control
+   HIMAGELIST hImageList = ImageList_Create(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), ILC_COLOR32 | ILC_MASK, 3, 3);
+   HICON hIcon = LoadIcon(hInstance, IDI_WINLOGO);
+   HICON hIconOpen = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_OPENED_FOLDER));
+   HICON hIconClosed = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_CLOSED_FOLDER));
+   ImageList_AddIcon(hImageList, hIcon);
+   ImageList_AddIcon(hImageList, hIconOpen);
+   ImageList_AddIcon(hImageList, hIconClosed);
+   SendMessage(hWndTV, TVM_SETIMAGELIST, TVSIL_NORMAL, (LPARAM)hImageList);
+
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
    
-   return TRUE;
+   return hWnd;
 }
 
 
@@ -318,6 +324,24 @@ VOID SeparateFullPath(WCHAR szFullPath[MAX_PATH], WCHAR szRootKeyName[MAX_ROOT_K
 
 
 
+// Функция создаёт фрейм поля адреса
+VOID CreateAddressField(HWND hWnd)
+{
+    // Create an Edit Control
+    hWndEV = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
+        25, 80, 950, 25,
+        hWnd, (HMENU)IDC_MAIN_EDIT, GetModuleHandle(NULL), NULL);
+
+    // Set the initial text for the EditView control
+    const WCHAR* pszText = L"HKEY_CURRENT_USER";
+    SetWindowTextW(hWndEV, pszText);
+
+    HFONT hfDefault;
+    hfDefault = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    SendMessage(hWndEV, WM_SETFONT, (WPARAM)hfDefault, 0);
+}
+
 // Функция создаёт фрейм дерева реестра
 VOID CreateTreeView(HWND hWnd)
 {
@@ -328,12 +352,6 @@ VOID CreateTreeView(HWND hWnd)
         hWnd, (HMENU)IDC_TREEVIEW, GetModuleHandle(NULL), NULL);
 
     CreateRootKeys();
-
-    // Set image list for treeview control
-    HIMAGELIST hImageList = ImageList_Create(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), ILC_COLOR32 | ILC_MASK, 1, 1);
-    HICON hIcon = LoadIcon(NULL, IDI_APPLICATION);
-    ImageList_AddIcon(hImageList, hIcon);
-    SendMessage(hWndTV, TVM_SETIMAGELIST, TVSIL_NORMAL, (LPARAM)hImageList);
 }
 
 // Функция для создания корневых ключей
@@ -379,11 +397,10 @@ VOID CreateRootKeys()
         wcscpy_s(pNodeInfo->szPath, MAX_PATH, szFullPath);
 
         tvInsert.item.cChildren = 1;
-        tvInsert.item.iImage = 0;
+        tvInsert.item.iImage = 1;
         tvInsert.item.iSelectedImage = 0;
         tvInsert.item.lParam = (LPARAM)pNodeInfo;
         HTREEITEM hRoot = (HTREEITEM)SendMessage(hWndTV, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
-        // SendMessage(hwndTV, TVM_EXPAND, TVE_EXPAND, (LPARAM)hRoot);
     }
 }
 
@@ -416,20 +433,140 @@ VOID CreateListView(HWND hWnd)
     ListView_InsertColumn(hWndLV, 2, &lvc);
 }
 
-// Функция создаёт фрейм поля адреса
-VOID CreateAddressField(HWND hWnd)
+// Функция создаёт тестовый набор ключей и значений
+VOID CreateTestKeysAndValues(HWND hWnd)
 {
-    // Create an Edit Control
-    hWndEV = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
-        25, 80, 950, 25,
-        hWnd, (HMENU)IDC_MAIN_EDIT, GetModuleHandle(NULL), NULL);
+    HKEY hKeyRoot;
+    LPCWSTR pszSubKey = L"Software\\1test_key";
 
-    HFONT hfDefault;
-    hfDefault = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
-    SendMessage(hWndEV, WM_SETFONT, (WPARAM)hfDefault, 0);
+    // Open or create the root key
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software", 0, KEY_ALL_ACCESS, &hKeyRoot) == ERROR_SUCCESS)
+    {
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, pszSubKey, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyRoot, NULL) != ERROR_SUCCESS)
+        {
+            MessageBoxW(hWnd, L"Failed to create or open root key.", L"Error", MB_OK | MB_ICONERROR);
+            return;
+        }
+    }
+
+    HKEY hKeyTest;
+    DWORD dwDisposition;
+
+    // Create or open the test key
+    if (RegCreateKeyExW(hKeyRoot, L"", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyTest, &dwDisposition) != ERROR_SUCCESS)
+    {
+        MessageBoxW(hWnd, L"Failed to create or open test key.", L"Error", MB_OK | MB_ICONERROR);
+        RegCloseKey(hKeyRoot);
+        return;
+    }
+
+    // Create the outer keys
+    for (int i = 0; i < 10; i++)
+    {
+        std::wstring subKeyName = L"key " + std::to_wstring(i);
+
+        HKEY hKeyOuter;
+        if (RegCreateKeyExW(hKeyTest, subKeyName.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyOuter, &dwDisposition) == ERROR_SUCCESS)
+        {
+            RegCloseKey(hKeyOuter);
+        }
+        else
+        {
+            MessageBoxW(hWnd, L"Failed to create outer key.", L"Error", MB_OK | MB_ICONERROR);
+            RegCloseKey(hKeyTest);
+            RegCloseKey(hKeyRoot);
+            return;
+        }
+    }
+
+    HKEY hKeyInner;
+    if (RegCreateKeyExW(hKeyTest, L"key 0\\skey 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner, &dwDisposition) == ERROR_SUCCESS)
+    {
+        RegCloseKey(hKeyInner);
+    }
+
+    // Create the inner keys and values
+    HKEY hKeyInner3;
+    if (RegCreateKeyExW(hKeyTest, L"key 0\\skey 1\\sskey 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner3, &dwDisposition) == ERROR_SUCCESS)
+    {
+        std::wstring szValueName = L"test_inner_3";
+        std::wstring szValueData = L"inner_3_sz_string_value";
+        DWORD dwType = REG_SZ;
+        DWORD cbData = static_cast<DWORD>((szValueData.size() + 1) * sizeof(wchar_t));
+
+        if (RegSetValueExW(hKeyInner3, szValueName.c_str(), 0, dwType, reinterpret_cast<const BYTE*>(szValueData.c_str()), cbData) != ERROR_SUCCESS)
+        {
+            MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
+        }
+
+        RegCloseKey(hKeyInner3);
+    }
+
+    HKEY hKeyOuter2;
+    if (RegCreateKeyExW(hKeyTest, L"key 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyOuter2, &dwDisposition) == ERROR_SUCCESS)
+    {
+        // Set values in the outer keys
+        std::wstring szValueName = L"sz_val";
+        std::wstring szValueData = L"test_sz_string_value";
+        DWORD dwType = REG_SZ;
+        DWORD cbData = static_cast<DWORD>((szValueData.size() + 1) * sizeof(wchar_t));
+
+        if (RegSetValueExW(hKeyTest, szValueName.c_str(), 0, dwType, reinterpret_cast<const BYTE*>(szValueData.c_str()), cbData) != ERROR_SUCCESS)
+        {
+            MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
+        }
+
+        RegCloseKey(hKeyOuter2);
+    }
+    
+    DWORD dwValueData = 12345;
+    DWORD dwType2 = REG_DWORD;
+    DWORD cbData2 = sizeof(DWORD);
+
+    if (RegSetValueExW(hKeyTest, L"dw_val", 0, dwType2, reinterpret_cast<const BYTE*>(&dwValueData), cbData2) != ERROR_SUCCESS)
+    {
+        MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
+    }
+
+    HKEY hKeyInner4;
+    if (RegCreateKeyExW(hKeyTest, L"key 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner4, &dwDisposition) == ERROR_SUCCESS)
+    {
+        std::wstring szValueNameInner = L"test_inner_1";
+        std::wstring szValueDataInner = L"inner_1_sz_string_value";
+        DWORD dwTypeInner = REG_SZ;
+        DWORD cbDataInner = static_cast<DWORD>((szValueDataInner.size() + 1) * sizeof(wchar_t));
+
+        if (RegSetValueExW(hKeyInner4, szValueNameInner.c_str(), 0, dwTypeInner, reinterpret_cast<const BYTE*>(szValueDataInner.c_str()), cbDataInner) != ERROR_SUCCESS)
+        {
+            MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
+        }
+
+        RegCloseKey(hKeyInner4);
+    }
+    
+    HKEY hKeyInner5;
+        if (RegCreateKeyExW(hKeyTest, L"key 0\\skey 1", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner5, &dwDisposition) == ERROR_SUCCESS)
+        {
+            std::wstring szValueNameInner2 = L"test_inner_2";
+            std::wstring szValueDataInner2 = L"inner_2_sz_string_value";
+            DWORD dwTypeInner2 = REG_SZ;
+            DWORD cbDataInner2 = static_cast<DWORD>((szValueDataInner2.size() + 1) * sizeof(wchar_t));
+
+            if (RegSetValueExW(hKeyInner5, szValueNameInner2.c_str(), 0, dwTypeInner2, reinterpret_cast<const BYTE*>(szValueDataInner2.c_str()), cbDataInner2) != ERROR_SUCCESS)
+            {
+                MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
+            }
+            RegCloseKey(hKeyInner5);
+    }
+
+    // Close the opened keys
+    RegCloseKey(hKeyTest);
+    RegCloseKey(hKeyRoot);
+
+    MessageBoxW(hWnd, L"Test keys and values created successfully.", L"Success", MB_OK | MB_ICONINFORMATION);
+
+    ExpandTreeViewToPath(L"HKEY_CURRENT_USER\\SOFTWARE\\1test_key");
 }
-
 
 
 // Функция раскрывает ключ в дереве реестра
@@ -518,7 +655,7 @@ VOID ExpandKey(CONST LPARAM& lParam)
                 tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_PARAM;
                 tvInsert.item.pszText = szSubkey;
                 tvInsert.item.cChildren = hasChildren ? 1 : 0;
-                tvInsert.item.iImage = 0;               // папка
+                tvInsert.item.iImage = 1;               // папка
                 tvInsert.item.iSelectedImage = 0;       // открытая папка
 
                 // Allocate memory for node info
@@ -1013,6 +1150,14 @@ VOID PopulateListView(HWND hwndLV, CONST HKEY& hKey)
     delete[] data;
 }
 
+// Функция обновляет ключ реестра
+VOID UpdateTreeView(HWND hWnd)
+{
+	WCHAR szFullPath[MAX_PATH];
+	GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+    ExpandTreeViewToPath(szFullPath);
+}
+
 // Функция обновляет значения ключа реестра
 VOID UpdateListView(HWND hWnd)
 {
@@ -1030,34 +1175,8 @@ VOID UpdateListView(HWND hWnd)
         if (RegOpenKeyExW(GetHKEYFromString(szRootKeyName), szSubKeyPath, NULL, KEY_READ, &hKey) == ERROR_SUCCESS)
         {
             // populate the listview with the values of the selected key
-            PopulateListView(hWnd, hKey);
+            PopulateListView(hWndLV, hKey);
             RegCloseKey(hKey);
-        }
-    }
-}
-
-// Функция обновляет содержимое списка значений
-VOID RefreshListView(HWND hWnd, CONST LPARAM& lParam)
-{
-    LPNMLVKEYDOWN pLVKeyDown = (LPNMLVKEYDOWN)lParam;
-    if (pLVKeyDown->wVKey == VK_F5) {
-        // Get the currently selected key
-        HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
-        if (hSelectedItem)
-        {
-            WCHAR szFullPath[MAX_PATH];
-            GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
-            WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
-            WCHAR szSubKeyPath[MAX_PATH] = L"";
-            SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
-
-            HKEY hKey;
-            if (RegOpenKeyExW(GetHKEYFromString(szRootKeyName), szSubKeyPath, NULL, KEY_READ, &hKey) == ERROR_SUCCESS)
-            {
-                // populate the listview with the values of the selected key
-                PopulateListView(hWnd, hKey);
-                RegCloseKey(hKey);
-            }
         }
     }
 }
@@ -1255,7 +1374,7 @@ VOID CreateKey(HWND hWnd)
             insertStruct.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_PARAM;
             insertStruct.item.pszText = szKeyName;
             insertStruct.item.cChildren = 0;
-            insertStruct.item.iImage = 0;               // папка
+            insertStruct.item.iImage = 1;               // папка
             insertStruct.item.iSelectedImage = 0;       // открытая папка
 
             // Считаем количество дочерних элементов
@@ -1640,11 +1759,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
         case WM_CREATE:
         {
+            CreateAddressField(hWnd);
+
             CreateTreeView(hWnd);
 
             CreateListView(hWnd);
 
-            CreateAddressField(hWnd);
             break;
         }
         case WM_NOTIFY:
@@ -1728,16 +1848,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
                 default:
                 {
-                    switch (pnmhdr->code) 
-                    {   // TODO: doesn't catch the keydown event when unfocused
-                        case LVN_KEYDOWN:
-                        {
-                            RefreshListView(hWnd, lParam);
-                            break;
-                        }
-                    // Handle other list view notifications if needed
-                    // ...
-                    }
+                    break;
                 }
             }
         }
@@ -1746,40 +1857,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Разобрать выбор в меню:
             switch (LOWORD(wParam))
             {
-                /*
-                case IDC_MAIN_EDIT:
-                {
-                    WCHAR szFullPath[MAX_PATH];
-                    SendMessage(hwndEdit, WM_GETTEXT, MAX_PATH, (LPARAM)szFullPath);
-
-                    // buffer now contains the text entered by the user
-                    // ... Your code to navigate to the entered path ...
-
-                    WCHAR szRootKey[MAX_ROOT_KEY_LENGTH];
-                    WCHAR szPath[MAX_PATH];
-
-                    // Find the position of the backslash character
-                    WCHAR* pBackslash = wcschr(szFullPath, L'\\');
-                    if (pBackslash)
-                    {
-                        // Copy the root key to the rootKey variable
-                        wcsncpy_s(szRootKey, MAX_ROOT_KEY_LENGTH, szFullPath, pBackslash - szFullPath);
-
-                        // Copy the path to the path variable
-                        wcscpy_s(szPath, MAX_PATH, pBackslash + 1);
-                    }
-
-                    HKEY hRootKey = GetHKeyFromString(szRootKey);
-                    HKEY hKey;
-
-                    if (RegOpenKeyExW(hRootKey, szPath, 0, KEY_READ, &hKey) == ERROR_SUCCESS)
-                    {
-                        // Successfully opened the key. You can now enumerate its subkeys and values as before.
-                        // Remember to close the key with RegCloseKey when you're done.
-                    }
-                }
-                break;
-                */
                 case IDM_KEY_EXPAND_COLLAPSE:
                 {
                     // Handle Expand/Collapse menu item
@@ -1834,6 +1911,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     DeleteValues(hWnd);
                     break;
                 }
+                case IDM_REFRESH:
+                {
+					UpdateListView(hWnd);
+					UpdateTreeView(hWnd);
+                    break;
+                }
+                case IDM_TEST:
+                {
+					CreateTestKeysAndValues(hWnd);
+					break;
+				}
                 case IDM_ABOUT:
                     DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
                 break;

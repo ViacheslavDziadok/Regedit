@@ -35,3 +35,7 @@
 #define IDM_CREATE_VALUE                        904
 #define IDM_CREATE_STRING_VALUE                 905
 #define IDM_CREATE_DWORD_VALUE                  906
+#define IDM_REFRESH                             1000
+#define IDM_TEST                                2000
+#define IDI_OPENED_FOLDER                       109
+#define IDI_CLOSED_FOLDER                       110

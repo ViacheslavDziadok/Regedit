@@ -118,7 +118,10 @@ IDC_REGEDIT ACCELERATORS
 {
     "?",            IDM_ABOUT, ASCII, ALT
     "/",            IDM_ABOUT, ASCII, ALT
-    "f",            IDM_FIND, ASCII, CONTROL
+    VK_F1,         IDM_FIND, VIRTKEY
+    "q",            IDM_EXIT, ASCII, ALT
+    VK_F5,         IDM_REFRESH, VIRTKEY
+    VK_F12,        IDM_TEST, VIRTKEY
 }
 
 
@@ -132,3 +135,5 @@ IDI_REGEDIT        ICON           "Regedit.ico"
 
 LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
 IDI_SMALL          ICON           "small.ico"
+IDI_OPENED_FOLDER  ICON           "opened-folder.ico"
+IDI_CLOSED_FOLDER  ICON           "closed-folder.ico"
