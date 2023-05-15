@@ -45,5 +45,11 @@
     <Image Include="Regedit.ico">
       <Filter>Файлы ресурсов</Filter>
     </Image>
+    <Image Include="closed-folder.ico">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
+    <Image Include="opened-folder.ico">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
   </ItemGroup>
 </Project>

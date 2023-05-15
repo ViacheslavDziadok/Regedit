@@ -21,7 +21,10 @@ HWND hWndEV;
 
 // Отправить объявления функций, включенных в этот модуль кода:
 ATOM                MyRegisterClass(HINSTANCE);
+void ProcessTabKeydown(MSG& msg, const HWND& hMainWnd);
 HWND                InitInstance(HINSTANCE, INT);
+
+VOID                ProcessTabKeyDown(MSG&, CONST HWND&);
 
 CONST WCHAR*        GetStringFromHKEY(CONST HKEY&);
 CONST HKEY          GetHKEYFromString(CONST std::wstring&);
@@ -39,13 +42,17 @@ VOID                ExpandKey(CONST LPARAM&);
 VOID                ShowKeyValues(CONST LPARAM&);
 VOID                DeleteTreeItemsRecursively(HWND, HTREEITEM);
 UINT                CompareValueNamesEx(LPARAM, LPARAM, LPARAM);
+VOID				CreateOrOpenKey(HWND, CONST HKEY&, LPCWSTR, HKEY&);
+VOID				SetValue(HWND, CONST HKEY&, LPCWSTR, DWORD, CONST BYTE*, DWORD);
 
 INT_PTR             OnSearch(HWND);
 INT_PTR             OnColumnClickEx(CONST LPARAM&);
 INT_PTR				OnEndLabelEditKeyEx(HWND, CONST LPARAM&);
 INT_PTR				OnEndLabelEditValueEx(HWND, CONST LPARAM&);
 
-LPWSTR			    SearchRegistry(CONST HKEY&, CONST WCHAR*, CONST WCHAR*, CONST WCHAR*, CONST BOOL);
+LPWSTR			    SearchRegistry(HKEY, CONST std::wstring&, CONST std::wstring&, CONST BOOL, CONST BOOL);
+LPWSTR			    SearchRegistryRecursive(HKEY, CONST std::wstring&, CONST std::wstring&, CONST BOOL, CONST BOOL);
+std::wstring        GetParentKeyPath(CONST std::wstring&);
 VOID                ExpandTreeViewToPath(CONST WCHAR*);
 VOID                PopulateListView(HWND, CONST HKEY&);
 VOID                UpdateTreeView(HWND);
@@ -95,6 +102,8 @@ INT APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // Цикл основного сообщения:
     while (GetMessage(&msg, nullptr, 0, 0))
     {
+        ProcessTabKeydown(msg, hMainWnd);
+
         if (!TranslateAccelerator(hMainWnd, hAccelTable, &msg))
         {
             TranslateMessage(&msg);
@@ -103,6 +112,41 @@ INT APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     }
 
     return (int) msg.wParam;
+}
+
+VOID ProcessTabKeydown(MSG& msg, const HWND& hMainWnd)
+{
+    // Check if the message is a keyboard input
+    if (msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN)
+    {
+        // Check the key code
+        switch (msg.wParam)
+        {
+        case VK_TAB:
+        {
+            // Check if Shift key is pressed
+            bool shiftPressed = GetKeyState(VK_SHIFT) < 0;
+
+            // Check the current focused control
+            HWND focusedWnd = GetFocus();
+            if (focusedWnd == GetDlgItem(hMainWnd, IDC_MAIN_EDIT))
+            {
+                // Main edit view is focused, switch to tree view
+                SetFocus(hWndTV);
+            }
+            else if (focusedWnd == hWndTV)
+            {
+                // Tree view is focused, switch to list view
+                SetFocus(hWndLV);
+            }
+            else if (focusedWnd == hWndLV)
+            {
+                // List view is focused, switch back to main edit view
+                SetFocus(GetDlgItem(hMainWnd, IDC_MAIN_EDIT));
+            }
+        }
+        }
+    }
 }
 
 //
@@ -333,10 +377,6 @@ VOID CreateAddressField(HWND hWnd)
         25, 80, 950, 25,
         hWnd, (HMENU)IDC_MAIN_EDIT, GetModuleHandle(NULL), NULL);
 
-    // Set the initial text for the EditView control
-    const WCHAR* pszText = L"HKEY_CURRENT_USER";
-    SetWindowTextW(hWndEV, pszText);
-
     HFONT hfDefault;
     hfDefault = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
     SendMessage(hWndEV, WM_SETFONT, (WPARAM)hfDefault, 0);
@@ -363,25 +403,25 @@ VOID CreateRootKeys()
         WCHAR szRootKey[MAX_ROOT_KEY_LENGTH];
         switch (i)
         {
-        case 0:
-            lstrcpy(szRootKey, L"HKEY_CLASSES_ROOT");
-            break;
-        case 1:
-            lstrcpy(szRootKey, L"HKEY_CURRENT_USER");
-            break;
-        case 2:
-            lstrcpy(szRootKey, L"HKEY_LOCAL_MACHINE");
-            break;
-        case 3:
-            lstrcpy(szRootKey, L"HKEY_USERS");
-            break;
-        case 4:
-            lstrcpy(szRootKey, L"HKEY_CURRENT_CONFIG");
-            break;
+            case 0:
+                lstrcpyW(szRootKey, L"HKEY_CLASSES_ROOT");
+                break;
+            case 1:
+                lstrcpyW(szRootKey, L"HKEY_CURRENT_USER");
+                break;
+            case 2:
+                lstrcpyW(szRootKey, L"HKEY_LOCAL_MACHINE");
+                break;
+            case 3:
+                lstrcpyW(szRootKey, L"HKEY_USERS");
+                break;
+            case 4:
+                lstrcpyW(szRootKey, L"HKEY_CURRENT_CONFIG");
+                break;
         }
 
         // Set root item
-        TVINSERTSTRUCT tvInsert;
+        TVINSERTSTRUCTW tvInsert;
         tvInsert.hParent = NULL;
         tvInsert.hInsertAfter = TVI_LAST;
         tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
@@ -389,7 +429,7 @@ VOID CreateRootKeys()
 
         // Construct the full path of the subkey
         WCHAR szFullPath[MAX_PATH];
-        wsprintf(szFullPath, L"%s\\%s", tvInsert.item.pszText, L"");
+        wsprintfW(szFullPath, L"%s\\%s", tvInsert.item.pszText, L"");
 
         // Allocate memory for node info
         PTREE_NODE_INFO pNodeInfo = new TREE_NODE_INFO;
@@ -401,6 +441,12 @@ VOID CreateRootKeys()
         tvInsert.item.iSelectedImage = 0;
         tvInsert.item.lParam = (LPARAM)pNodeInfo;
         HTREEITEM hRoot = (HTREEITEM)SendMessage(hWndTV, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
+        if (!lstrcmpW(tvInsert.item.pszText, L"HKEY_CURRENT_USER"))
+        {
+            SetFocus(hWndTV);
+            // Set the selection to "HKEY_CURRENT_USER"
+            SendMessageW(hWndTV, TVM_SELECTITEM, TVGN_CARET, (LPARAM)hRoot);
+        }
     }
 }
 
@@ -408,27 +454,27 @@ VOID CreateRootKeys()
 VOID CreateListView(HWND hWnd)
 {
     // Create the ListView control
-    hWndLV = CreateWindowEx(0, WC_LISTVIEW, NULL,
+    hWndLV = CreateWindowExW(0, WC_LISTVIEW, NULL,
         WS_CHILD | WS_VISIBLE | LVS_REPORT | WS_BORDER | LVS_EDITLABELS,
         350, 120, 625, 520,
         hWnd, (HMENU)IDC_LISTVIEW, GetModuleHandle(NULL), NULL);
 
     // Add columns.
-    LVCOLUMN lvc = { 0 };
+    LVCOLUMNW lvc = { 0 };
     lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
 
     lvc.iSubItem = 0;
-    lvc.pszText = (LPWSTR)L"Name";
+    lvc.pszText = (LPWSTR)L"Имя";
     lvc.cx = 250; // Width of column
     ListView_InsertColumn(hWndLV, 0, &lvc);
 
     lvc.iSubItem = 1;
-    lvc.pszText = (LPWSTR)L"Type";
+    lvc.pszText = (LPWSTR)L"Тип";
     lvc.cx = 100;
     ListView_InsertColumn(hWndLV, 1, &lvc);
 
     lvc.iSubItem = 2;
-    lvc.pszText = (LPWSTR)L"Data";
+    lvc.pszText = (LPWSTR)L"Данные";
     lvc.cx = 275;
     ListView_InsertColumn(hWndLV, 2, &lvc);
 }
@@ -437,148 +483,64 @@ VOID CreateListView(HWND hWnd)
 VOID CreateTestKeysAndValues(HWND hWnd)
 {
     HKEY hKeyRoot;
-    LPCWSTR pszSubKey = L"Software\\1test_key";
+    CreateOrOpenKey(hWnd, HKEY_CURRENT_USER, L"Software\\1test_key", hKeyRoot);
 
-    // Open or create the root key
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software", 0, KEY_ALL_ACCESS, &hKeyRoot) == ERROR_SUCCESS)
-    {
-        if (RegCreateKeyExW(HKEY_CURRENT_USER, pszSubKey, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyRoot, NULL) != ERROR_SUCCESS)
-        {
-            MessageBoxW(hWnd, L"Failed to create or open root key.", L"Error", MB_OK | MB_ICONERROR);
-            return;
-        }
-    }
+    std::wstring szValueData = L"test_sz_string_value";
+    SetValue(hWnd, hKeyRoot, L"sz_val", REG_SZ, reinterpret_cast<const BYTE*>(szValueData.c_str()), MAX_VALUE_NAME);
 
-    HKEY hKeyTest;
-    DWORD dwDisposition;
+    DWORD dwValueData = 12345;
+    SetValue(hWnd, hKeyRoot, L"dw_val", REG_DWORD, reinterpret_cast<const BYTE*>(&dwValueData), sizeof(DWORD));
 
-    // Create or open the test key
-    if (RegCreateKeyExW(hKeyRoot, L"", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyTest, &dwDisposition) != ERROR_SUCCESS)
-    {
-        MessageBoxW(hWnd, L"Failed to create or open test key.", L"Error", MB_OK | MB_ICONERROR);
-        RegCloseKey(hKeyRoot);
-        return;
-    }
-
-    // Create the outer keys
     for (int i = 0; i < 10; i++)
     {
-        std::wstring subKeyName = L"key " + std::to_wstring(i);
-
         HKEY hKeyOuter;
-        if (RegCreateKeyExW(hKeyTest, subKeyName.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyOuter, &dwDisposition) == ERROR_SUCCESS)
-        {
-            RegCloseKey(hKeyOuter);
-        }
-        else
-        {
-            MessageBoxW(hWnd, L"Failed to create outer key.", L"Error", MB_OK | MB_ICONERROR);
-            RegCloseKey(hKeyTest);
-            RegCloseKey(hKeyRoot);
-            return;
-        }
+        std::wstring subKeyName = L"key " + std::to_wstring(i);
+        CreateOrOpenKey(hWnd, hKeyRoot, subKeyName.c_str(), hKeyOuter);
+        RegCloseKey(hKeyOuter);
     }
 
-    HKEY hKeyInner;
-    if (RegCreateKeyExW(hKeyTest, L"key 0\\skey 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner, &dwDisposition) == ERROR_SUCCESS)
-    {
-        RegCloseKey(hKeyInner);
-    }
+    HKEY hKeyInnerStruct;
+    CreateOrOpenKey(hWnd, hKeyRoot, L"key 0\\skey 0", hKeyInnerStruct);
+    RegCloseKey(hKeyInnerStruct);
 
-    // Create the inner keys and values
+    HKEY hKeyInner1;
+    CreateOrOpenKey(hWnd, hKeyRoot, L"key 0", hKeyInner1);
+    std::wstring szValueDataInner1 = L"inner_1_sz_string_value";
+    SetValue(hWnd, hKeyInner1, L"test_inner_1", REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner1.c_str()), MAX_VALUE_NAME);
+    RegCloseKey(hKeyInner1);
+
+    HKEY hKeyInner2;
+    CreateOrOpenKey(hWnd, hKeyRoot, L"key 0\\skey 1", hKeyInner2);
+    std::wstring szValueDataInner2 = L"inner_2_sz_string_value";
+    SetValue(hWnd, hKeyInner2, L"test_inner_2", REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner2.c_str()), MAX_VALUE_NAME);
+    RegCloseKey(hKeyInner2);
+
     HKEY hKeyInner3;
-    if (RegCreateKeyExW(hKeyTest, L"key 0\\skey 1\\sskey 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner3, &dwDisposition) == ERROR_SUCCESS)
-    {
-        std::wstring szValueName = L"test_inner_3";
-        std::wstring szValueData = L"inner_3_sz_string_value";
-        DWORD dwType = REG_SZ;
-        DWORD cbData = static_cast<DWORD>((szValueData.size() + 1) * sizeof(wchar_t));
+    CreateOrOpenKey(hWnd, hKeyRoot, L"key 0\\skey 1\\sskey 0", hKeyInner3);
+    std::wstring szValueDataInner3 = L"inner_3_sz_string_value";
+    SetValue(hWnd, hKeyInner3, L"test_inner_3", REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner3.c_str()), MAX_VALUE_NAME);
+    RegCloseKey(hKeyInner3);
 
-        if (RegSetValueExW(hKeyInner3, szValueName.c_str(), 0, dwType, reinterpret_cast<const BYTE*>(szValueData.c_str()), cbData) != ERROR_SUCCESS)
-        {
-            MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
-        }
-
-        RegCloseKey(hKeyInner3);
-    }
-
-    HKEY hKeyOuter2;
-    if (RegCreateKeyExW(hKeyTest, L"key 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyOuter2, &dwDisposition) == ERROR_SUCCESS)
-    {
-        // Set values in the outer keys
-        std::wstring szValueName = L"sz_val";
-        std::wstring szValueData = L"test_sz_string_value";
-        DWORD dwType = REG_SZ;
-        DWORD cbData = static_cast<DWORD>((szValueData.size() + 1) * sizeof(wchar_t));
-
-        if (RegSetValueExW(hKeyTest, szValueName.c_str(), 0, dwType, reinterpret_cast<const BYTE*>(szValueData.c_str()), cbData) != ERROR_SUCCESS)
-        {
-            MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
-        }
-
-        RegCloseKey(hKeyOuter2);
-    }
-    
-    DWORD dwValueData = 12345;
-    DWORD dwType2 = REG_DWORD;
-    DWORD cbData2 = sizeof(DWORD);
-
-    if (RegSetValueExW(hKeyTest, L"dw_val", 0, dwType2, reinterpret_cast<const BYTE*>(&dwValueData), cbData2) != ERROR_SUCCESS)
-    {
-        MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
-    }
-
-    HKEY hKeyInner4;
-    if (RegCreateKeyExW(hKeyTest, L"key 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner4, &dwDisposition) == ERROR_SUCCESS)
-    {
-        std::wstring szValueNameInner = L"test_inner_1";
-        std::wstring szValueDataInner = L"inner_1_sz_string_value";
-        DWORD dwTypeInner = REG_SZ;
-        DWORD cbDataInner = static_cast<DWORD>((szValueDataInner.size() + 1) * sizeof(wchar_t));
-
-        if (RegSetValueExW(hKeyInner4, szValueNameInner.c_str(), 0, dwTypeInner, reinterpret_cast<const BYTE*>(szValueDataInner.c_str()), cbDataInner) != ERROR_SUCCESS)
-        {
-            MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
-        }
-
-        RegCloseKey(hKeyInner4);
-    }
-    
-    HKEY hKeyInner5;
-        if (RegCreateKeyExW(hKeyTest, L"key 0\\skey 1", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner5, &dwDisposition) == ERROR_SUCCESS)
-        {
-            std::wstring szValueNameInner2 = L"test_inner_2";
-            std::wstring szValueDataInner2 = L"inner_2_sz_string_value";
-            DWORD dwTypeInner2 = REG_SZ;
-            DWORD cbDataInner2 = static_cast<DWORD>((szValueDataInner2.size() + 1) * sizeof(wchar_t));
-
-            if (RegSetValueExW(hKeyInner5, szValueNameInner2.c_str(), 0, dwTypeInner2, reinterpret_cast<const BYTE*>(szValueDataInner2.c_str()), cbDataInner2) != ERROR_SUCCESS)
-            {
-                MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
-            }
-            RegCloseKey(hKeyInner5);
-    }
-
-    // Close the opened keys
-    RegCloseKey(hKeyTest);
+    // Close the opened root key
     RegCloseKey(hKeyRoot);
 
-    MessageBoxW(hWnd, L"Test keys and values created successfully.", L"Success", MB_OK | MB_ICONINFORMATION);
+    MessageBoxW(hWnd, L"Тестовые ключи и значения успешно добавлены.", L"Успех", MB_OK | MB_ICONINFORMATION);
 
     ExpandTreeViewToPath(L"HKEY_CURRENT_USER\\SOFTWARE\\1test_key");
 }
 
 
+
 // Функция раскрывает ключ в дереве реестра
 VOID ExpandKey(CONST LPARAM& lParam)
 {
-    LPNMTREEVIEW lpnmtv = (LPNMTREEVIEW)lParam;
+    LPNMTREEVIEWW lpnmtv = (LPNMTREEVIEWW)lParam;
     HTREEITEM hItem = lpnmtv->itemNew.hItem;
 
     TVITEMEX tvItem;
     tvItem.mask = TVIF_CHILDREN | TVIF_PARAM;
     tvItem.hItem = hItem;
-    SendMessage(hWndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
+    SendMessageW(hWndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
 
     if (tvItem.cChildren == 1)
     {
@@ -587,7 +549,7 @@ VOID ExpandKey(CONST LPARAM& lParam)
         tvItem.mask = TVIF_TEXT;
         tvItem.pszText = szKey;
         tvItem.cchTextMax = MAX_KEY_LENGTH;
-        SendMessage(hWndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
+        SendMessageW(hWndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
 
         // Get the TREE_NODE_INFO structure from the expanded node
         PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)tvItem.lParam;
@@ -610,12 +572,12 @@ VOID ExpandKey(CONST LPARAM& lParam)
         HKEY hKey = NULL;
         if (RegOpenKeyExW(hParentKey, szPath, 0, KEY_ENUMERATE_SUB_KEYS, &hKey) == ERROR_SUCCESS)
         {
-            // If child nodes already displayed, skip loading
-            HTREEITEM hChildItem = (HTREEITEM)SendMessage(hWndTV, TVM_GETNEXTITEM, TVGN_CHILD, (LPARAM)hItem);
-            if (hChildItem)
+            // If the item already has children, skip loading them again
+            HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hItem);
+            if (hChildItem != NULL)
             {
-                return;
-            }
+				return;
+			}
 
             // Enumerate subkeys
             WCHAR szSubkey[MAX_KEY_LENGTH];
@@ -629,7 +591,7 @@ VOID ExpandKey(CONST LPARAM& lParam)
                 {
                     WCHAR szChildSubkey[MAX_KEY_LENGTH];
                     DWORD cchChildSubkey = MAX_KEY_LENGTH;
-                    hasChildren = (RegEnumKeyEx(hSubKey, 0, szChildSubkey, &cchChildSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS);
+                    hasChildren = (RegEnumKeyExW(hSubKey, 0, szChildSubkey, &cchChildSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS);
                     RegCloseKey(hSubKey);
                 }
 
@@ -638,7 +600,7 @@ VOID ExpandKey(CONST LPARAM& lParam)
                 wcscpy_s(szhKey, GetStringFromHKEY(hParentKey));
 
                 WCHAR szNewPath[MAX_PATH] = { 0 };
-                if (!lstrcmp(szPath, L""))
+                if (!lstrcmpW(szPath, L""))
                 {
                     wcscpy_s(szNewPath, szSubkey);
                 }
@@ -649,7 +611,7 @@ VOID ExpandKey(CONST LPARAM& lParam)
                 }
 
                 // Insert subkey into treeview
-                TVINSERTSTRUCT tvInsert;
+                TVINSERTSTRUCTW tvInsert;
                 tvInsert.hParent = hItem;
                 tvInsert.hInsertAfter = TVI_LAST;
                 tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_PARAM;
@@ -664,7 +626,7 @@ VOID ExpandKey(CONST LPARAM& lParam)
                 wcscpy_s(pNodeInfo->szPath, MAX_PATH, szNewPath);
 
                 tvInsert.item.lParam = (LPARAM)pNodeInfo;
-                SendMessage(hWndTV, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
+                SendMessageW(hWndTV, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
 
                 // Reset variables for next subkey
                 dwIndex++;
@@ -680,7 +642,7 @@ VOID ExpandKey(CONST LPARAM& lParam)
 // Функция отображает значения выбранного ключа
 VOID ShowKeyValues(CONST LPARAM& lParam)
 {
-    LPNMTREEVIEW lpnmtv = (LPNMTREEVIEW)lParam;
+    LPNMTREEVIEWW lpnmtv = (LPNMTREEVIEWW)lParam;
     HTREEITEM hItem = lpnmtv->itemNew.hItem;
 
     WCHAR szKey[MAX_KEY_LENGTH] = { 0 };
@@ -690,7 +652,7 @@ VOID ShowKeyValues(CONST LPARAM& lParam)
     tvItem.pszText = szKey;
     tvItem.cchTextMax = MAX_KEY_LENGTH;
 
-    SendMessage(hWndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
+    SendMessageW(hWndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
 
     PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)tvItem.lParam;
     HKEY hParentKey;
@@ -715,11 +677,12 @@ VOID ShowKeyValues(CONST LPARAM& lParam)
     }
 
     HKEY hKey;
-    if (RegOpenKeyExW(hParentKey, szPath, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+    if (RegOpenKeyExW(hParentKey, szPath, 0, KEY_READ, &hKey) == ERROR_SUCCESS) 
+    {
         PopulateListView(hWndLV, hKey);
 
         // Update the Edit Control
-        SendMessage(hWndEV, WM_SETTEXT, 0, (LPARAM)szFullPath);
+        SendMessageW(hWndEV, WM_SETTEXT, 0, (LPARAM)szFullPath);
 
         RegCloseKey(hKey);
     }
@@ -768,7 +731,24 @@ UINT CompareValueNamesEx(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort)
     return data->bSortAscending ? res >= 0 : res <= 0;
 }
 
+// Функция создания или открытия ключа
+VOID CreateOrOpenKey(HWND hWnd, CONST HKEY& parentKey, LPCWSTR keyName, HKEY& outKey)
+{
+    DWORD dwDisposition;
+    if (RegCreateKeyExW(parentKey, keyName, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &outKey, &dwDisposition) != ERROR_SUCCESS)
+    {
+        MessageBoxW(hWnd, L"Failed to create or open key.", L"Error", MB_OK | MB_ICONERROR);
+    }
+}
 
+// Функция задания значения в ключе
+VOID SetValue(HWND hWnd, CONST HKEY& key, LPCWSTR valueName, DWORD type, CONST BYTE* data, DWORD dataSize)
+{
+    if (RegSetValueExW(key, valueName, 0, type, data, dataSize) != ERROR_SUCCESS)
+    {
+        MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
+    }
+}
 
 
 // Функция вызова диалогового окна поиска ключей и значений
@@ -822,14 +802,14 @@ INT_PTR OnEndLabelEditKeyEx(HWND hWnd, CONST LPARAM& lParam)
             wcscpy_s(szFullPath, MAX_PATH, pNodeInfo->hKey);
             wcscat_s(szFullPath, MAX_PATH, L"\\");
             wcscat_s(szFullPath, MAX_PATH, szNewPath);
-            SendMessage(hWndEV, WM_SETTEXT, 0, (LPARAM)szFullPath);
+            SendMessageW(hWndEV, WM_SETTEXT, 0, (LPARAM)szFullPath);
             // Refresh the list view with the updated values
             PopulateListView(hWndLV, hKey);
             delete[] szFullPath;
 		}
         else
         {
-			MessageBox(hWnd, L"Failed to rename key", L"Error", MB_OK | MB_ICONERROR);
+			MessageBoxW(hWnd, L"Failed to rename key", L"Error", MB_OK | MB_ICONERROR);
         }
 	}
 
@@ -918,8 +898,41 @@ INT_PTR OnEndLabelEditValueEx(HWND hWnd, CONST LPARAM& lParam)
 
 
 
-// Функция рекурсивного поиска в реестре, возвращает путь к найденному ключу или значение, алгоритм DFS
+// Функция поиска ключей/значений в реестре
 LPWSTR SearchRegistry(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wstring& searchTerm, BOOL bSearchKeys, BOOL bSearchValues)
+{
+    // First, perform the usual recursive search in the selected key
+    LPWSTR pszFoundPath = SearchRegistryRecursive(hKeyRoot, keyPath, searchTerm, bSearchKeys, bSearchValues);
+    if (pszFoundPath != nullptr) {
+        return pszFoundPath;
+    }
+
+    // If the search did not find anything and there is no parent key path, move to the root key
+    if (keyPath.empty()) {
+        // Get the root key name from the hKeyRoot value
+        std::wstring rootKeyPath = GetStringFromHKEY(hKeyRoot);
+
+        // Continue the search from the root key
+        return SearchRegistry(hKeyRoot, rootKeyPath, searchTerm, bSearchKeys, bSearchValues);
+    }
+
+    else {
+        // If the search did not find anything and there is a parent key path, move to the parent key
+        std::wstring parentKeyPath = GetParentKeyPath(keyPath);
+
+        // Continue the search from the parent key
+        pszFoundPath = SearchRegistryRecursive(hKeyRoot, parentKeyPath, searchTerm, bSearchKeys, bSearchValues);
+        if (pszFoundPath != nullptr) {
+            return pszFoundPath;
+        }
+    }
+
+    // No match found
+    return nullptr;
+}
+
+// Функция рекурсивного поиска в реестре, возвращает путь к найденному ключу или значение, алгоритм DFS
+LPWSTR SearchRegistryRecursive(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wstring& searchTerm, BOOL bSearchKeys, BOOL bSearchValues)
 {
     HKEY hKey;
 
@@ -938,11 +951,21 @@ LPWSTR SearchRegistry(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wst
 
         while (RegEnumValueW(hKey, dwIndex, szValueName, &dwValueNameSize, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
         {
+            std::wstring wstrValueName = szValueName;
+            std::wstring wstrSearchTerm = searchTerm;
+
+            for (auto& c : wstrValueName) c = towlower(c);
+            for (auto& c : wstrSearchTerm) c = towlower(c);
+
             // Check if the value name matches the search term
-            if (wcsstr(szValueName, searchTerm.c_str()) != NULL)
+            if (wstrValueName.find(wstrSearchTerm) != std::wstring::npos)
             {
                 // Value name matches the search term
                 delete[] szValueName;
+
+                // Close the opened key
+                RegCloseKey(hKey);
+
                 return _wcsdup(keyPath.c_str());
             }
 
@@ -962,30 +985,24 @@ LPWSTR SearchRegistry(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wst
 
         while (RegEnumKeyExW(hKey, dwIndex, szKeyName, &dwKeyNameSize, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
         {
+            std::wstring wstrKeyName = szKeyName;
+            std::wstring wstrSearchTerm = searchTerm;
+
+            for (auto& c : wstrKeyName) c = towlower(c);
+            for (auto& c : wstrSearchTerm) c = towlower(c);
+
             // Check if the key name matches the search term
-            if (wcsstr(szKeyName, searchTerm.c_str()) != NULL)
+            if (wstrKeyName.find(wstrSearchTerm) != std::wstring::npos)
             {
                 // Key name matches the search term
                 // Construct and return the full path
                 std::wstring fullPath = keyPath + L"\\" + szKeyName;
                 delete[] szKeyName;
-                return _wcsdup(fullPath.c_str());
-            }
 
-            // Recurse into the subkey
-            std::wstring subkeyPath;
-            if (keyPath.empty()) {
-                subkeyPath = szKeyName;
-            }
-            else {
-                subkeyPath = keyPath + L"\\" + szKeyName;
-            }
-            LPWSTR pszFoundPath = SearchRegistry(hKeyRoot, subkeyPath, searchTerm, bSearchKeys, bSearchValues);
-            if (pszFoundPath != nullptr)
-            {
-                // Found the search term in the subkey, return the path
-                delete[] szKeyName;
-                return pszFoundPath;
+                // Close the opened key
+                RegCloseKey(hKey);
+
+                return _wcsdup(fullPath.c_str());
             }
 
             // Increment the index
@@ -995,10 +1012,49 @@ LPWSTR SearchRegistry(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wst
         delete[] szKeyName;
     }
 
-    // Close the opened key
-    RegCloseKey(hKey);
+    // Recursively search the subkeys
+    DWORD dwIndex = 0;
+    WCHAR* szKeyName = new WCHAR[MAX_KEY_LENGTH];
+    DWORD dwKeyNameSize = MAX_KEY_LENGTH;
+
+    while (RegEnumKeyExW(hKey, dwIndex, szKeyName, &dwKeyNameSize, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
+    {
+        std::wstring subkeyPath;
+        if (keyPath.empty()) {
+            subkeyPath = szKeyName;
+        }
+        else {
+            subkeyPath = keyPath + L"\\" + szKeyName;
+        }
+        LPWSTR pszFoundPath = SearchRegistryRecursive(hKeyRoot, subkeyPath, searchTerm, bSearchKeys, bSearchValues);
+        if (pszFoundPath != nullptr)
+        {
+            // Found the search term in the subkey, return the path
+            delete[] szKeyName;
+
+            // Close the opened key
+            RegCloseKey(hKey);
+
+            return pszFoundPath;
+        }
+
+        // Increment the index
+        dwIndex++;
+        dwKeyNameSize = MAX_KEY_LENGTH;
+    }
+    delete[] szKeyName;
 
     return nullptr; // No match found
+}
+
+// Функция возвращает имя родительского ключа
+std::wstring GetParentKeyPath(CONST std::wstring& keyPath)
+{
+    size_t pos = keyPath.rfind(L'\\');
+    if (pos == std::wstring::npos)
+        return L"";  // Root key, no parent
+    else
+        return keyPath.substr(0, pos);
 }
 
 // Функция раскрывает ключ по заданному пути
@@ -1017,7 +1073,7 @@ VOID ExpandTreeViewToPath(CONST WCHAR* pszPath)
     {
         // Check if the current segment matches the item text
         WCHAR szItemText[MAX_PATH] = { 0 };
-        TVITEM tvItem;
+        TVITEMW tvItem;
         tvItem.mask = TVIF_TEXT;
         tvItem.hItem = hCurrentItem;
         tvItem.pszText = szItemText;
@@ -1042,13 +1098,13 @@ VOID ExpandTreeViewToPath(CONST WCHAR* pszPath)
                 if (hSelected != NULL)
                 {
                     // Get the associated data of the selected item (if any)
-                    TVITEM item;
+                    TVITEMW item;
                     item.hItem = hSelected;
                     item.mask = TVIF_PARAM;
                     TreeView_GetItem(hWndTV, &item);
                     PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)item.lParam;
 
-                    // Delete the key from the registry
+                    // Show the key from the registry by the address
                     if (pNodeInfo != NULL)
                     {
                         HKEY hParentKey = GetHKEYFromString(pNodeInfo->hKey);
@@ -1071,7 +1127,7 @@ VOID ExpandTreeViewToPath(CONST WCHAR* pszPath)
             hCurrentItem = TreeView_GetChild(hWndTV, hCurrentItem);
             while (hCurrentItem != NULL)
             {
-                TVITEM tvChildItem;
+                TVITEMW tvChildItem;
                 tvChildItem.mask = TVIF_TEXT;
                 tvChildItem.hItem = hCurrentItem;
                 tvChildItem.pszText = szItemText;
@@ -1148,6 +1204,9 @@ VOID PopulateListView(HWND hwndLV, CONST HKEY& hKey)
     // Delete the dynamically allocated memory.
     delete[] szValueName;
     delete[] data;
+
+    // Set the selection in the list view
+    ListView_SetItemState(hWndLV, 0, LVIS_FOCUSED | LVIS_SELECTED, LVIS_FOCUSED | LVIS_SELECTED);
 }
 
 // Функция обновляет ключ реестра
@@ -1214,11 +1273,11 @@ VOID ShowKeyMenu(HWND hWnd)
         HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
         // Add the menu items
         BOOL bExpanded = TreeView_GetItemState(hWndTV, hSelectedItem, TVIS_EXPANDED) & TVIS_EXPANDED;
-        AddMenuOption(hContextMenu, bExpanded ? L"Collapse" : L"Expand", IDM_KEY_EXPAND_COLLAPSE, MF_STRING);
-        AddMenuOption(hContextMenu, L"New Key", IDM_NEW_KEY, MF_STRING);
-        AddMenuOption(hContextMenu, L"Find", IDM_FIND, MF_STRING);
-        AddMenuOption(hContextMenu, L"Delete", IDM_DELETE_KEY, MF_STRING);
-        AddMenuOption(hContextMenu, L"Rename", IDM_RENAME_KEY, MF_STRING);
+        AddMenuOption(hContextMenu, bExpanded ? L"Закрыть" : L"Открыть", IDM_KEY_EXPAND_COLLAPSE, MF_STRING);
+        AddMenuOption(hContextMenu, L"Новый ключ", IDM_NEW_KEY, MF_STRING);
+        AddMenuOption(hContextMenu, L"Найти", IDD_SEARCH, MF_STRING);
+        AddMenuOption(hContextMenu, L"Удалить", IDM_DELETE_KEY, MF_STRING);
+        AddMenuOption(hContextMenu, L"Переименовать", IDM_RENAME_KEY, MF_STRING);
 
         // Get the current mouse position
         POINT pt;
@@ -1255,11 +1314,11 @@ VOID ShowNewValueMenu(HWND hWnd)
         if (hSubMenu)
         {
             // Append items to the submenu
-            AppendMenuW(hSubMenu, MF_STRING, IDM_CREATE_STRING_VALUE, L"String Value");
-            AppendMenuW(hSubMenu, MF_STRING, IDM_CREATE_DWORD_VALUE, L"DWORD (32-bit) Value");
+            AppendMenuW(hSubMenu, MF_STRING, IDM_CREATE_STRING_VALUE, L"Текстовое значение");
+            AppendMenuW(hSubMenu, MF_STRING, IDM_CREATE_DWORD_VALUE, L"Значение DWORD (32-bit)");
 
             // Append the "New" item with the submenu
-            AppendMenuW(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, L"New");
+            AppendMenuW(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, L"Добавить");
         }
         // Get the current mouse position
         POINT pt;
@@ -1279,9 +1338,9 @@ VOID ShowEditValueMenu(HWND hWnd)
     if (hMenu)
     {
         // Append items to the menu. The third parameter is the item identifier which you'll use in the WM_COMMAND message.
-        AppendMenuW(hMenu, MF_STRING, IDM_MODIFY_VALUE, L"Modify");
-        AppendMenuW(hMenu, MF_STRING, IDM_DELETE_VALUE, L"Delete");
-        AppendMenuW(hMenu, MF_STRING, IDM_RENAME_VALUE, L"Rename");
+        AppendMenuW(hMenu, MF_STRING, IDD_MODIFY_VALUE, L"Изменить");
+        AppendMenuW(hMenu, MF_STRING, IDM_DELETE_VALUE, L"Удалить");
+        AppendMenuW(hMenu, MF_STRING, IDM_RENAME_VALUE, L"Переименовать");
 
         // Get the current mouse position
         POINT pt;
@@ -1302,7 +1361,7 @@ VOID CreateKey(HWND hWnd)
 {
     // Get the key path from the edit control.
     WCHAR szFullPath[MAX_PATH];
-    GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+    GetDlgItemTextW(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
 
     WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
     WCHAR szSubKeyPath[MAX_PATH] = L"";
@@ -1368,7 +1427,7 @@ VOID CreateKey(HWND hWnd)
             HTREEITEM hParentItem = TreeView_GetSelection(hWndTV);
 
             // Create the new key in the tree view
-            TVINSERTSTRUCT insertStruct;
+            TVINSERTSTRUCTW insertStruct;
             insertStruct.hParent = hParentItem;
             insertStruct.hInsertAfter = TVI_LAST;
             insertStruct.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_PARAM;
@@ -1377,21 +1436,11 @@ VOID CreateKey(HWND hWnd)
             insertStruct.item.iImage = 1;               // папка
             insertStruct.item.iSelectedImage = 0;       // открытая папка
 
-            // Считаем количество дочерних элементов
-            int count = 0;
-            HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hParentItem);
-
-            while (hChildItem)
-            {
-                count++;
-                hChildItem = TreeView_GetNextSibling(hWndTV, hChildItem);
-            }
-
             // Set the parent node to have children
-            TVITEM parentItem;
+            TVITEMW parentItem;
             parentItem.mask = TVIF_HANDLE | TVIF_CHILDREN;
             parentItem.hItem = hParentItem;
-            parentItem.cChildren = count + 1;
+            parentItem.cChildren = dwIndex + 1;
 
             // Update the parent item
             TreeView_SetItem(hWndTV, &parentItem);
@@ -1399,7 +1448,16 @@ VOID CreateKey(HWND hWnd)
             // Construct the full path of the subkey
             WCHAR* szhKey = new WCHAR[MAX_PATH];
 
-            swprintf_s(szhKey, MAX_PATH, L"%s\\%s", szSubKeyPath, szKeyName);
+            if (wcscmp(szSubKeyPath, L"") == 0)
+            {
+				// No subkey path, use the key name
+				swprintf_s(szhKey, MAX_PATH, L"%s", szKeyName);
+			}
+            else
+            {
+				// Append the key name to the subkey path
+				swprintf_s(szhKey, MAX_PATH, L"%s\\%s", szSubKeyPath, szKeyName);
+			}
 
             // Allocate memory for node info
             PTREE_NODE_INFO pNodeInfo = new TREE_NODE_INFO;
@@ -1434,11 +1492,11 @@ VOID DeleteKey(HWND hWnd)
     {
         INT_PTR nRet = 0;
         // Display a confirmation dialog box before deleting the value.
-        nRet = MessageBox(hWnd, L"Deleting certain registry keys could cause system instability. Are you sure you want to permanently delete this key and all of its subkeys?", L"Confirm Key Delete", MB_YESNO | MB_ICONWARNING);
+        nRet = MessageBoxW(hWnd, L"Удаление определённых ключей реестра может привести к нестабильной работе системы. Вы действительно хотите удалить данный ключ и его подключи?", L"Подтверждение удаления ключа", MB_YESNO | MB_ICONWARNING);
         if (nRet == IDYES)
         {
             // Get the associated data of the selected item (if any)
-            TVITEM item;
+            TVITEMW item;
             item.hItem = hSelectedItem;
             item.mask = TVIF_PARAM;
             TreeView_GetItem(hWndTV, &item);
@@ -1453,13 +1511,26 @@ VOID DeleteKey(HWND hWnd)
                 // Delete the key
                 if (RegDeleteTreeW(hParentKey, szSubKeyPath) == ERROR_SUCCESS)
                 {
-                    // Step 6: Update the tree view to remove the deleted item
+                    // Get the parent item of the deleted item
+                    HTREEITEM hParentItem = TreeView_GetParent(hWndTV, hSelectedItem);
+
+                    // Update the tree view to remove the deleted item
                     TreeView_DeleteItem(hWndTV, hSelectedItem);
+
+                    // Check if the parent item has no more children
+                    if (TreeView_GetChild(hWndTV, hParentItem) == NULL)
+                    {
+                        // Update the parent item to remove the "-" sign
+                        TVITEMW parentItem;
+                        parentItem.hItem = hParentItem;
+                        parentItem.mask = TVIF_STATE | TVIF_CHILDREN;
+                        parentItem.stateMask = TVIS_EXPANDED;
+                        parentItem.state = 0;
+                        parentItem.cChildren = 0;
+                        TreeView_SetItem(hWndTV, &parentItem);
+                    }
                 }
             }
-
-            // Step 6: Update the tree view to remove the deleted item
-            TreeView_DeleteItem(hWndTV, hSelectedItem);
         }
     }
 }
@@ -1471,14 +1542,14 @@ VOID CreateValue(HWND hWnd, CONST DWORD dwType)
     wcscpy_s(szValueName, MAX_VALUE_NAME, L"New Value");
 
 	HTREEITEM hItem = TreeView_GetSelection(hWndTV);
-	TVITEM item;
+	TVITEMW item;
 	item.mask = TVIF_PARAM;
 	item.hItem = hItem;
 	TreeView_GetItem(hWndTV, &item);
 
     // Get the key path from the edit control.
     WCHAR szFullPath[MAX_PATH];
-    GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+    GetDlgItemTextW(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
 
     WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
     WCHAR szSubKeyPath[MAX_PATH] = L"";
@@ -1567,7 +1638,7 @@ VOID ModifyValue(HWND hWnd)
 
     if (iSelected != -1)
     {
-        LVITEM lvi = { 0 };
+        LVITEMW lvi = { 0 };
         lvi.iItem = iSelected;
         lvi.iSubItem = 0;
         lvi.mask = LVIF_TEXT | LVIF_PARAM;
@@ -1580,7 +1651,7 @@ VOID ModifyValue(HWND hWnd)
 
         // Get the key path from the edit control.
         WCHAR szFullPath[MAX_PATH];
-        GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+        GetDlgItemTextW(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
 
         WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
         WCHAR szSubKeyPath[MAX_PATH] = L"";
@@ -1597,11 +1668,11 @@ VOID ModifyValue(HWND hWnd)
 
             if (dwType == REG_SZ)
             {
-                DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_DIALOG_EDIT_STRING), hWnd, EditStringDlgProc, (LPARAM)valueInfo);
+                DialogBoxParamW(hInst, MAKEINTRESOURCE(IDD_EDIT_STRING), hWnd, EditStringDlgProc, (LPARAM)valueInfo);
             }
             else if (dwType == REG_DWORD)
             {
-                DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_DIALOG_EDIT_DWORD), hWnd, EditDwordDlgProc, (LPARAM)valueInfo);
+                DialogBoxParamW(hInst, MAKEINTRESOURCE(IDD_EDIT_DWORD), hWnd, EditDwordDlgProc, (LPARAM)valueInfo);
             }
             RegCloseKey(hKey);
 
@@ -1682,11 +1753,11 @@ VOID DeleteValues(HWND hWnd)
     // Display a confirmation dialog box before deleting the value.
     if (iSelectedCount == 1)
     {
-        nRet = MessageBox(hWnd, L"Deleting certain registry values could cause system instability. Are you sure you want to permanently delete this value?", L"Confirm Value Delete", MB_YESNO | MB_ICONWARNING);
+        nRet = MessageBoxW(hWnd, L"Удаление определённых значений реестра может привести к нестабильной работе системы. Вы действительно хотите навсегда удалить это значение?", L"Подтверждение удаления значения", MB_YESNO | MB_ICONWARNING);
     }
     else if (iSelectedCount > 1) 
     {
-        nRet = MessageBox(hWnd, L"Deleting certain registry values could cause system instability. Are you sure you want to permanently delete these values?", L"Confirm Value Delete", MB_YESNO | MB_ICONWARNING);
+        nRet = MessageBoxW(hWnd, L"Удаление определённых значений реестра может привести к нестабильной работе системы. Вы действительно хотите навсегда удалить эти значения?", L"Подтверждение удаления значений", MB_YESNO | MB_ICONWARNING);
     }
     if (nRet == IDYES)
     {
@@ -1697,7 +1768,7 @@ VOID DeleteValues(HWND hWnd)
             {
                 // Get the name of the selected value
                 WCHAR* szValueName = new WCHAR[MAX_VALUE_NAME];
-                LVITEM lvi = { 0 };
+                LVITEMW lvi = { 0 };
                 lvi.mask = LVIF_TEXT;
                 lvi.iItem = iSelected;
                 lvi.pszText = szValueName;
@@ -1706,7 +1777,7 @@ VOID DeleteValues(HWND hWnd)
 
                 // Get the key path from the edit control.
                 WCHAR szFullPath[MAX_PATH];
-                GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+                GetDlgItemTextW(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
 
                 WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
                 WCHAR szSubKeyPath[MAX_PATH] = L"";
@@ -1717,7 +1788,7 @@ VOID DeleteValues(HWND hWnd)
                 if (RegOpenKeyExW(GetHKEYFromString(szRootKeyName), szSubKeyPath, 0, KEY_READ | KEY_WRITE, &hKey) == ERROR_SUCCESS)
                 {
                     // Delete the value
-                    LONG lResult = RegDeleteValue(hKey, szValueName);
+                    LONG lResult = RegDeleteValueW(hKey, szValueName);
                     if (lResult == ERROR_SUCCESS)
                     {
                         // Remove the item from the list view
@@ -1726,7 +1797,7 @@ VOID DeleteValues(HWND hWnd)
                     else
                     {
                         // Handle the error
-                        MessageBox(NULL, L"Failed to delete the selected value", L"Error", MB_OK | MB_ICONERROR);
+                        MessageBoxW(NULL, L"Failed to delete the selected value", L"Error", MB_OK | MB_ICONERROR);
                         return;
                     }
                     RegCloseKey(hKey);
@@ -1847,9 +1918,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     break;
                 }
                 default:
-                {
                     break;
-                }
             }
         }
         case WM_COMMAND:
@@ -1871,7 +1940,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     CreateKey(hWnd);
 					break;
 				}
-                case IDM_FIND:
+                case IDD_SEARCH:
                 {
                     return OnSearch(hWnd);
                     break;
@@ -1896,7 +1965,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					CreateValue(hWnd, REG_DWORD);
 					break;
 				}
-                case IDM_MODIFY_VALUE:
+                case IDD_MODIFY_VALUE:
                 {
                     ModifyValue(hWnd);
                     break;
@@ -1994,20 +2063,20 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
         case WM_INITDIALOG:
         {
             // Initialize the checkboxes and set them as checked
-            CheckDlgButton(hDlg, IDC_DIALOG_SEARCH_KEYS, BST_CHECKED);
-            CheckDlgButton(hDlg, IDC_DIALOG_SEARCH_VALUES, BST_CHECKED);
+            CheckDlgButton(hDlg, IDM_SEARCH_KEYS, BST_CHECKED);
+            CheckDlgButton(hDlg, IDM_SEARCH_VALUES, BST_CHECKED);
             return TRUE;
         }
         case WM_COMMAND:
         {
             switch (LOWORD(wParam))
             {
-                case IDC_DIALOG_SEARCH_KEYS:
-                case IDC_DIALOG_SEARCH_VALUES:
+                case IDM_SEARCH_KEYS:
+                case IDM_SEARCH_VALUES:
                 {
                     // Check the state of the checkboxes
-                    BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDC_DIALOG_SEARCH_KEYS);
-                    BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDC_DIALOG_SEARCH_VALUES);
+                    BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDM_SEARCH_KEYS);
+                    BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDM_SEARCH_VALUES);
 
                     // Enable/disable the search button based on the checkbox state
                     EnableWindow(GetDlgItem(hDlg, IDOK), bSearchKeys || bSearchValues);
@@ -2017,13 +2086,13 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
                 case IDOK:
                 {
                     WCHAR szSearchTerm[MAX_PATH];
-                    BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDC_DIALOG_SEARCH_KEYS);
-                    BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDC_DIALOG_SEARCH_VALUES);
+                    BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDM_SEARCH_KEYS);
+                    BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDM_SEARCH_VALUES);
 
-                    int length = GetDlgItemTextW(hDlg, IDC_DIALOG_SEARCH_NAME, szSearchTerm, MAX_PATH);
+                    int length = GetDlgItemTextW(hDlg, IDM_SEARCH_NAME, szSearchTerm, MAX_PATH);
 
                     // Get the key path from the edit control.
-                    WCHAR szFullPath[MAX_PATH];
+                    WCHAR* szFullPath = new WCHAR[MAX_PATH];
                     GetWindowTextW(hWndEV, szFullPath, MAX_PATH);
 
                     WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
@@ -2038,19 +2107,53 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
                     LPWSTR pszFoundPath = SearchRegistry(hRootKey, szSubKeyPath, szSearchTerm, bSearchKeys, bSearchValues);
                     if (pszFoundPath != NULL)
                     {
-                        wcscat_s(szFullPath, MAX_PATH, L"\\");
-                        wcscat_s(szFullPath, MAX_PATH, pszFoundPath);
+                        if (lstrcmp(szFullPath, szRootKeyName) == 0)
+                        {
+                            wcscat_s(szFullPath, MAX_PATH, L"\\");
+                            wcscat_s(szFullPath, MAX_PATH, pszFoundPath);
+                        }
+                        else 
+                        {
+                            wcscpy_s(szFullPath, MAX_PATH, L"");
+                            wcscat_s(szFullPath, MAX_PATH, szRootKeyName);
+                            wcscat_s(szFullPath, MAX_PATH, L"\\");
+        				    wcscat_s(szFullPath, MAX_PATH, pszFoundPath);
+                        }
                         ExpandTreeViewToPath(szFullPath);
 
                         // Don't forget to free the memory allocated by SearchRegistry!
                         delete[] pszFoundPath;
+                        delete[] szFullPath;
 
                         EndDialog(hDlg, LOWORD(wParam));
+
+                        if (bSearchKeys)
+                        {
+							// Select the found key in the treeview
+                            SetFocus(hWndTV);
+						}
+                        else
+                        {
+							// Select the found value in the listview
+                            SetFocus(hWndLV);
+						}
+
                         return TRUE;
                     }
                     else
                     {
-                        MessageBoxW(hDlg, L"Search term not found.", L"Search", MB_OK);
+                        // Don't forget to free the memory allocated by SearchRegistry!
+                        delete[] pszFoundPath;
+                        delete[] szFullPath;
+
+                        LPWSTR szMessage = new WCHAR[MAX_PATH];
+                        wcscpy_s(szMessage, MAX_PATH, L"Элемент \"");
+                        wcscat_s(szMessage, MAX_PATH, szSearchTerm);
+                        wcscat_s(szMessage, MAX_PATH, L"\" в процессе поиска в \"");
+                        wcscat_s(szMessage, MAX_PATH, szRootKeyName);
+                        wcscat_s(szMessage, MAX_PATH, L"\" не найден.");
+                        MessageBoxW(hDlg, szMessage, L"Элемент не найден", MB_OK);
+
                         return FALSE;
                     }
 
@@ -2093,8 +2196,8 @@ INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARA
             DWORD dwDataSize = MAX_VALUE_NAME;
             if (RegQueryValueExW(pValueInfo->hKey, pValueInfo->szValueName, NULL, NULL, (LPBYTE)szData, &dwDataSize) == ERROR_SUCCESS)
             {
-                SetDlgItemText(hDlg, IDC_DIALOG_EDIT_STRING, pValueInfo->szValueName);
-                SetDlgItemText(hDlg, IDC_DIALOG_EDIT_STRING_VALUE, szData);
+                SetDlgItemText(hDlg, IDM_EDIT_STRING_NAME, pValueInfo->szValueName);
+                SetDlgItemText(hDlg, IDM_EDIT_STRING_VALUE, szData);
             }
             delete[] szData;
             return TRUE;
@@ -2107,7 +2210,7 @@ INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARA
                 {
                     // Get the text from the edit control and set it as the new value data.
                     WCHAR* szData = new WCHAR[MAX_VALUE_NAME];
-                    GetDlgItemText(hDlg, IDC_DIALOG_EDIT_STRING_VALUE, szData, MAX_VALUE_NAME);
+                    GetDlgItemText(hDlg, IDM_EDIT_STRING_VALUE, szData, MAX_VALUE_NAME);
                     if (RegSetValueExW(pValueInfo->hKey, pValueInfo->szValueName, 0, pValueInfo->dwType, (const BYTE*)szData, (DWORD)((wcslen(szData) + 1) * sizeof(WCHAR))) == ERROR_SUCCESS)
                     {
                         // Refresh the list view with the updated values
@@ -2164,11 +2267,11 @@ INT_PTR CALLBACK EditDwordDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
             DWORD dwValueSize = sizeof(dwValue);
             if (RegQueryValueEx(hKey, szValueName, NULL, NULL, (LPBYTE)&dwValue, &dwValueSize) == ERROR_SUCCESS)
             {
-                SetDlgItemTextW(hDlg, IDC_DIALOG_EDIT_DWORD, szValueName);
+                SetDlgItemTextW(hDlg, IDM_EDIT_DWORD_NAME, szValueName);
                 // Set the initial text of the edit control to the current value.
-                SetDlgItemInt(hDlg, IDC_DIALOG_EDIT_DWORD_VALUE, dwValue, FALSE);
+                SetDlgItemInt(hDlg, IDM_EDIT_DWORD_VALUE, dwValue, FALSE);
                 // Select the decimal base radio button by default.
-                CheckRadioButton(hDlg, IDC_DIALOG_EDIT_DWORD_HEXBASE, IDC_DIALOG_EDIT_DWORD_DECIMALBASE, IDC_DIALOG_EDIT_DWORD_DECIMALBASE);
+                CheckRadioButton(hDlg, IDM_EDIT_DWORD_HEXBASE, IDM_EDIT_DWORD_DECIMALBASE, IDM_EDIT_DWORD_DECIMALBASE);
             }
 
             return TRUE;
@@ -2182,7 +2285,7 @@ INT_PTR CALLBACK EditDwordDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
                 {
                     // Get the new value from the edit control.
                     BOOL bTranslated;
-                    DWORD dwNewValue = GetDlgItemInt(hDlg, IDC_DIALOG_EDIT_DWORD_VALUE, &bTranslated, FALSE);
+                    DWORD dwNewValue = GetDlgItemInt(hDlg, IDM_EDIT_DWORD_VALUE, &bTranslated, FALSE);
                     if (bTranslated)
                     {
                         // Set the new value.

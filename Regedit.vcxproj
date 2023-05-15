@@ -141,6 +141,8 @@
     <ResourceCompile Include="Regedit.rc" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="closed-folder.ico" />
+    <Image Include="opened-folder.ico" />
     <Image Include="Regedit.ico" />
     <Image Include="small.ico" />
   </ItemGroup>
