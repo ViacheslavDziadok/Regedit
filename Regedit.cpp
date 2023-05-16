@@ -1,7 +1,4 @@
-﻿// Regedit.cpp : Определяет точку входа для приложения.
-//
-
-#include "framework.h"
+﻿#include "framework.h"
 #include "Regedit.h"
 
 #define MAX_LOADSTRING 100
@@ -9,58 +6,56 @@
 #define MAX_KEY_LENGTH 255
 #define MAX_VALUE_NAME 16383
 
-// Глобальные переменные:
-HINSTANCE hInst;                                // текущий экземпляр
-WCHAR szTitle[MAX_LOADSTRING];                  // Текст строки заголовка
-WCHAR szWindowClass[MAX_LOADSTRING];            // имя класса главного окна
-HWND hWnd;
-HWND hWndTV;
-HWND hWndLV;
-HWND hWndEV;
-HWND hFindDlg;
-volatile bool bIsSearchCancelled = FALSE;
+// Global variables:
+HINSTANCE hInst;                                // Current example
+WCHAR szTitle[MAX_LOADSTRING];                  // Title text
+WCHAR szWindowClass[MAX_LOADSTRING];            // Main window class name
+HWND hWnd;									    // Main window handle
+HWND hWndTV; 								    // TreeView handle
+HWND hWndLV; 								    // ListView handle
+HWND hWndEV;								    // Main Edit handle
+HWND hFindDlg;								    // Find dialog handle
+volatile bool bIsSearchCancelled = FALSE;       // Flag to cancel search
 
-// Отправить объявления функций, включенных в этот модуль кода:
+// Functions declarations:
 ATOM                MyRegisterClass(HINSTANCE);
 HWND                InitInstance(HINSTANCE, INT);
 
 VOID                ProcessTabKeyDown(MSG&, CONST HWND&);
+
+VOID __cdecl        FindThreadFunc(VOID*);
 
 CONST WCHAR*        GetStringFromHKEY(CONST HKEY&);
 CONST HKEY          GetHKEYFromString(CONST std::wstring&);
 CONST WCHAR*        RegTypeToString(CONST DWORD);
 CONST WCHAR*        RegDataToString(CONST DWORD, CONST BYTE*, CONST DWORD);
 VOID                SeparateFullPath(WCHAR[MAX_PATH], WCHAR[MAX_PATH], WCHAR[MAX_PATH]);
+std::wstring        GetParentKeyPath(CONST std::wstring&);
+UINT                CompareValueNamesEx(LPARAM, LPARAM, LPARAM);
 
-VOID                CreateTestKeysAndValues();
 VOID                CreateAddressField();
 VOID                CreateTreeView();
-VOID                CreateTreeViewImageList(CONST HINSTANCE& hInstance);
+VOID                CreateTreeViewImageList();
 VOID                CreateRootKeys();
 VOID                CreateListView();
+VOID                CreateTestKeysAndValues();
 
-VOID                ExpandKey(CONST LPARAM&);
-VOID                ShowKeyValues(CONST LPARAM&);
-VOID                DeleteTreeItemsRecursively(HTREEITEM);
-UINT                CompareValueNamesEx(LPARAM, LPARAM, LPARAM);
-VOID				CreateOrOpenKey(CONST HKEY&, LPCWSTR, HKEY&);
-VOID				SetValue(CONST HKEY&, LPCWSTR, DWORD, CONST BYTE*, DWORD);
+VOID                ShowValues(CONST LPARAM&);
+VOID                ExpandTreeViewToPath(CONST WCHAR*);
+VOID                PopulateListView(CONST HKEY&);
+VOID                UpdateTreeView();
+VOID                UpdateListView();
+VOID                SelectClickedKey();
 
 INT_PTR             OnSearch();
+INT_PTR             OnKeyExpand(CONST LPARAM&);
 INT_PTR             OnColumnClickEx(CONST LPARAM&);
 INT_PTR				OnEndLabelEditKeyEx(CONST LPARAM&);
 INT_PTR				OnEndLabelEditValueEx(CONST LPARAM&);
 
 LPWSTR			    SearchRegistry(HKEY, CONST std::wstring&, CONST std::wstring&, CONST BOOL, CONST BOOL);
 LPWSTR			    SearchRegistryRecursive(HKEY, CONST std::wstring&, CONST std::wstring&, CONST BOOL, CONST BOOL);
-std::wstring        GetParentKeyPath(CONST std::wstring&);
-VOID                ExpandTreeViewToPath(CONST WCHAR*);
 
-VOID                PopulateListView(CONST HKEY&);
-VOID                UpdateTreeView();
-VOID                UpdateListView();
-
-VOID                SelectClickedKey();
 VOID                ShowKeyMenu();
 VOID                AddMenuOption(HMENU, LPCWSTR, UINT, UINT);
 VOID                ShowNewValueMenu();
@@ -73,7 +68,8 @@ VOID                CreateValue(CONST DWORD);
 VOID                ModifyValue();
 VOID                RenameValue();
 CONST DWORD         RenameRegValue(CONST HKEY&, CONST WCHAR*, CONST WCHAR*);
-VOID                DeleteValues(); 
+VOID                DeleteValues();
+VOID                DeleteTreeItemsRecursively(HTREEITEM);
 
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    SearchDlgProc(HWND, UINT, WPARAM, LPARAM);
@@ -90,19 +86,19 @@ INT APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
 
-    // Инициализация глобальных строк
+    // Global strings initialization
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
     LoadStringW(hInstance, IDC_REGEDIT, szWindowClass, MAX_LOADSTRING);
     MyRegisterClass(hInstance);
 
-    // Выполнить инициализацию приложения:
+    // Application initialization
     HWND hMainWnd = InitInstance(hInstance, nCmdShow);
 
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_REGEDIT));
 
     MSG msg;
 
-    // Цикл основного сообщения:
+    // Main message cycle:
     while (GetMessage(&msg, nullptr, 0, 0))
     {
         ProcessTabKeyDown(msg, hMainWnd);
@@ -117,11 +113,7 @@ INT APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     return (int) msg.wParam;
 }
 
-//
-//  ФУНКЦИЯ: MyRegisterClass()
-//
-//  ЦЕЛЬ: Регистрирует класс окна.
-//
+// Register the window class.
 ATOM MyRegisterClass(HINSTANCE hInstance)
 {
     WNDCLASSEXW wcex;
@@ -143,16 +135,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
     return RegisterClassExW(&wcex);
 }
 
-//
-//   ФУНКЦИЯ: InitInstance(HINSTANCE, int)
-//
-//   ЦЕЛЬ: Сохраняет маркер экземпляра и создает главное окно
-//
-//   КОММЕНТАРИИ:
-//
-//        В этой функции маркер экземпляра сохраняется в глобальной переменной, а также
-//        создается и выводится главное окно программы.
-//
+// Save instance handle and create main window
 HWND InitInstance(HINSTANCE hInstance, INT nCmdShow)
 {
     INITCOMMONCONTROLSEX icex;
@@ -160,13 +143,10 @@ HWND InitInstance(HINSTANCE hInstance, INT nCmdShow)
     icex.dwICC = ICC_STANDARD_CLASSES;
     InitCommonControlsEx(&icex);
 
-    hInst = hInstance; // Сохранить маркер экземпляра в глобальной переменной
+    hInst = hInstance; // Store instance handle in our global variable
 
     hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, 0, 1025, 725, nullptr, nullptr, hInstance, nullptr);
-
-    HWND hWndLabelMain = CreateWindowW(L"STATIC", L"Приветствуем в Редакторе Реестра Windows. Для продолжения работы, выберите желаемую функцию и введите требуемые параметры.\r\nВНИМАНИЕ: Программа позволяет редактировать любые незащищённые данные реестра Windows. Соблюдайте осторожность при работе.",
-        WS_VISIBLE | WS_CHILD | WS_BORDER, 0, 0, 1025, 40, hWnd, NULL, hInstance, NULL);
 
     if (!hWnd)
     {
@@ -177,7 +157,7 @@ HWND InitInstance(HINSTANCE hInstance, INT nCmdShow)
     CreateTreeView();
     CreateListView();
 
-    CreateTreeViewImageList(hInstance);
+    CreateTreeViewImageList();
 
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
@@ -185,7 +165,7 @@ HWND InitInstance(HINSTANCE hInstance, INT nCmdShow)
     return hWnd;
 }
 
-// Обработчик нажатия клавиши Tab
+// Processes Tab key presses
 VOID ProcessTabKeyDown(MSG& msg, CONST HWND& hMainWnd)
 {
     // Check if the message is a keyboard input
@@ -223,6 +203,9 @@ VOID ProcessTabKeyDown(MSG& msg, CONST HWND& hMainWnd)
 
 
 
+// Structs
+
+// Passes search parameters to the search dialog
 typedef struct _SearchData
 {
     WCHAR szSearchTerm[MAX_VALUE_NAME];
@@ -230,14 +213,14 @@ typedef struct _SearchData
     BOOL bSearchValues;
 } SEARCH_DATA, * PSEARCH_DATA;
 
-// Структура для передачи параметров пути в ячейку дерева (ключ)
+// Passes node parameters to the tree view
 typedef struct _TREE_NODE_INFO
 {
     WCHAR hKey[MAX_KEY_LENGTH];    // registry hive name
     WCHAR szPath[MAX_PATH];        // full key path
 } TREE_NODE_INFO, * PTREE_NODE_INFO;
 
-// Структура для передачи параметров в диалоговое окно редактирования двоичного значения
+// Passes value parameters to the list view
 typedef struct _VALUE_INFO
 {
     HKEY hKey;
@@ -245,14 +228,7 @@ typedef struct _VALUE_INFO
     DWORD dwType;
 } VALUE_INFO, * PVALUE_INFO;
 
-// Структура для передачи параметров в диалоговое окно редактирования строкового значения
-typedef struct _EDIT_VALUE_DLG_PARAMS
-{
-    HKEY hKey;
-    WCHAR szValueName[MAX_VALUE_NAME];
-} EDIT_VALUE_DLG_PARAMS, * PEDIT_VALUE_DLG_PARAMS;
-
-// Структура для передачи параметров в List View
+// Passes parameters for list view sorting
 typedef struct _TREE_NODE_DATA
 {
     HWND hList;
@@ -262,7 +238,7 @@ typedef struct _TREE_NODE_DATA
 
 
 
-// Функция потока поиска в реестре
+// Threaded search function
 VOID __cdecl FindThreadFunc(void* pArguments)
 {
     PSEARCH_DATA pSearchData = (PSEARCH_DATA)pArguments;
@@ -312,12 +288,12 @@ VOID __cdecl FindThreadFunc(void* pArguments)
             delete[] szFullPath;
 
             LPWSTR szMessage = new WCHAR[MAX_PATH];
-            wcscpy_s(szMessage, MAX_PATH, L"Элемент \"");
+            wcscpy_s(szMessage, MAX_PATH, L"Element \"");
             wcscat_s(szMessage, MAX_PATH, pSearchData->szSearchTerm);
-            wcscat_s(szMessage, MAX_PATH, L"\" в процессе поиска в \"");
+            wcscat_s(szMessage, MAX_PATH, L"\" in \"");
             wcscat_s(szMessage, MAX_PATH, szRootKeyName);
-            wcscat_s(szMessage, MAX_PATH, L"\" не найден.");
-            MessageBoxW(hWnd, szMessage, L"Элемент не найден", MB_OK);
+            wcscat_s(szMessage, MAX_PATH, L"\" wasn't found.");
+            MessageBoxW(hWnd, szMessage, L"Element not found", MB_OK);
 
             return;
         }
@@ -339,7 +315,9 @@ VOID __cdecl FindThreadFunc(void* pArguments)
 
 
 
-// Функция для получения строки из HKEY
+// Utilities
+
+// Gets string from HKEY
 CONST WCHAR* GetStringFromHKEY(CONST HKEY& hKey)
 {
     switch (reinterpret_cast<DWORD_PTR>(hKey))
@@ -359,7 +337,7 @@ CONST WCHAR* GetStringFromHKEY(CONST HKEY& hKey)
     }
 }
 
-// Функция для получения HKEY из строки
+// Gets HKEY from string
 CONST HKEY GetHKEYFromString(CONST std::wstring& szKey)
 {
     if (szKey == L"HKEY_CLASSES_ROOT")
@@ -376,7 +354,7 @@ CONST HKEY GetHKEYFromString(CONST std::wstring& szKey)
         return NULL;
 }
 
-// Функция конвертирует тип данных реестра в строку
+// Gets string from REG_TYPE
 CONST WCHAR* RegTypeToString(CONST DWORD dwType)
 {
     switch (dwType)
@@ -410,7 +388,7 @@ CONST WCHAR* RegTypeToString(CONST DWORD dwType)
     }
 }
 
-// Функция конвертирует данные реестра в строку
+// Gets string from REG_DATA
 CONST WCHAR* RegDataToString(CONST BYTE* data, CONST DWORD dwType, CONST DWORD dwDataSize)
 {
     static WCHAR buffer[MAX_VALUE_NAME];
@@ -436,7 +414,7 @@ CONST WCHAR* RegDataToString(CONST BYTE* data, CONST DWORD dwType, CONST DWORD d
     return buffer;
 }
 
-// Функция разделяет полный путь к реестру на корневой ключ и путь к подключу
+// Gets string from REG_DATA
 VOID SeparateFullPath(WCHAR szFullPath[MAX_PATH], WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH], WCHAR szSubKeyPath[MAX_PATH])
 {
     // Separate the root key name from the subkey path.
@@ -455,15 +433,45 @@ VOID SeparateFullPath(WCHAR szFullPath[MAX_PATH], WCHAR szRootKeyName[MAX_ROOT_K
     }
 }
 
+// Gets the parent key path from a full key path
+std::wstring GetParentKeyPath(CONST std::wstring& keyPath)
+{
+    size_t pos = keyPath.rfind(L'\\');
+    if (pos == std::wstring::npos)
+        return L"";  // Root key, no parent
+    else
+        return keyPath.substr(0, pos);
+}
+
+// Comparator for sorting the listview items
+UINT CompareValueNamesEx(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort)
+{
+    TREE_NODE_DATA* data = (TREE_NODE_DATA*)lParamSort;
+
+    WCHAR* buf1 = new WCHAR[MAX_VALUE_NAME];
+    WCHAR* buf2 = new WCHAR[MAX_VALUE_NAME];
+
+    ListView_GetItemText(data->hList, lParam1, data->iSubItem, buf1, MAX_VALUE_NAME);
+    ListView_GetItemText(data->hList, lParam2, data->iSubItem, buf2, MAX_VALUE_NAME);
+
+    INT res = wcscmp(buf1, buf2);
+
+    delete[] buf1;
+    delete[] buf2;
+
+    return data->bSortAscending ? res >= 0 : res <= 0;
+}
 
 
-// Функция создаёт фрейм поля адреса
+// Constructors
+
+// Address Bar
 VOID CreateAddressField()
 {
     // Create an Edit Control
     hWndEV = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
-        0, 45, 1025, 20,
+        0, 0, 1025, 20,
         hWnd, (HMENU)IDC_MAIN_EDIT, GetModuleHandle(NULL), NULL);
 
     HFONT hfDefault;
@@ -471,33 +479,33 @@ VOID CreateAddressField()
     SendMessage(hWndEV, WM_SETFONT, (WPARAM)hfDefault, 0);
 }
 
-// Функция создаёт фрейм дерева реестра
+// Tree View
 VOID CreateTreeView()
 {
     // Create the TreeView control
     hWndTV = CreateWindowEx(0, WC_TREEVIEW, NULL,
         WS_VISIBLE | WS_CHILD | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_HASLINES | WS_BORDER | TVS_EDITLABELS,
-        0, 70, 320, 665,
+        0, 21, 320, 646,
         hWnd, (HMENU)IDC_TREEVIEW, GetModuleHandle(NULL), NULL);
 
     CreateRootKeys();
 }
 
-// Функция создаёт список изображений для дерева реестра
-VOID CreateTreeViewImageList(CONST HINSTANCE& hInstance)
+// Tree View Image List
+VOID CreateTreeViewImageList()
 {
     // Set image list for treeview control
     HIMAGELIST hImageList = ImageList_Create(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), ILC_COLOR32 | ILC_MASK, 3, 3);
-    HICON hIcon = LoadIcon(hInstance, IDI_WINLOGO);
-    HICON hIconOpen = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_OPENED_FOLDER));
-    HICON hIconClosed = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_CLOSED_FOLDER));
+    HICON hIcon = LoadIcon(hInst, IDI_WINLOGO);
+    HICON hIconOpen = LoadIcon(hInst, MAKEINTRESOURCE(IDI_OPENED_FOLDER));
+    HICON hIconClosed = LoadIcon(hInst, MAKEINTRESOURCE(IDI_CLOSED_FOLDER));
     ImageList_AddIcon(hImageList, hIcon);
     ImageList_AddIcon(hImageList, hIconOpen);
     ImageList_AddIcon(hImageList, hIconClosed);
     SendMessageW(hWndTV, TVM_SETIMAGELIST, TVSIL_NORMAL, (LPARAM)hImageList);
 }
 
-// Функция для создания корневых ключей
+// Root Keys for Tree View creation
 VOID CreateRootKeys()
 {
     // Set root items
@@ -553,13 +561,13 @@ VOID CreateRootKeys()
     }
 }
 
-// Функция создаёт фрейм списка
+// List View
 VOID CreateListView()
 {
     // Create the ListView control
     hWndLV = CreateWindowExW(0, WC_LISTVIEW, NULL,
         WS_CHILD | WS_VISIBLE | LVS_REPORT | WS_BORDER | LVS_EDITLABELS,
-        325, 70, 685, 665,
+        321, 21, 689, 646,
         hWnd, (HMENU)IDC_LISTVIEW, GetModuleHandle(NULL), NULL);
 
     // Add columns.
@@ -567,183 +575,78 @@ VOID CreateListView()
     lvc.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
 
     lvc.iSubItem = 0;
-    lvc.pszText = (LPWSTR)L"Имя";
+    lvc.pszText = (LPWSTR)L"Name";
     lvc.cx = 250; // Width of column
     ListView_InsertColumn(hWndLV, 0, &lvc);
 
     lvc.iSubItem = 1;
-    lvc.pszText = (LPWSTR)L"Тип";
+    lvc.pszText = (LPWSTR)L"Type";
     lvc.cx = 100;
     ListView_InsertColumn(hWndLV, 1, &lvc);
 
     lvc.iSubItem = 2;
-    lvc.pszText = (LPWSTR)L"Данные";
+    lvc.pszText = (LPWSTR)L"Data";
     lvc.cx = 335;
     ListView_InsertColumn(hWndLV, 2, &lvc);
 }
 
-// Функция создаёт тестовый набор ключей и значений
+// Test Keys and Values
 VOID CreateTestKeysAndValues()
 {
     HKEY hKeyRoot;
-    CreateOrOpenKey(HKEY_CURRENT_USER, L"Software\\1test_key", hKeyRoot);
+    DWORD dwDisposition;
+    RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\1test_key", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyRoot, &dwDisposition);
 
     std::wstring szValueData = L"test_sz_string_value";
-    SetValue(hKeyRoot, L"sz_val", REG_SZ, reinterpret_cast<const BYTE*>(szValueData.c_str()), MAX_VALUE_NAME);
+    RegSetValueExW(hKeyRoot, L"sz_val", 0, REG_SZ, reinterpret_cast<const BYTE*>(szValueData.c_str()), MAX_VALUE_NAME);
 
     DWORD dwValueData = 12345;
-    SetValue(hKeyRoot, L"dw_val", REG_DWORD, reinterpret_cast<const BYTE*>(&dwValueData), sizeof(DWORD));
+    RegSetValueExW(hKeyRoot, L"dw_val", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&dwValueData), sizeof(DWORD));
 
     for (int i = 0; i < 10; i++)
     {
         HKEY hKeyOuter;
         std::wstring subKeyName = L"key " + std::to_wstring(i);
-        CreateOrOpenKey(hKeyRoot, subKeyName.c_str(), hKeyOuter);
+        RegCreateKeyExW(hKeyRoot, subKeyName.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyOuter, &dwDisposition);
         RegCloseKey(hKeyOuter);
     }
 
     HKEY hKeyInnerStruct;
-    CreateOrOpenKey(hKeyRoot, L"key 0\\skey 0", hKeyInnerStruct);
+    RegCreateKeyExW(hKeyRoot, L"key 0\\skey 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInnerStruct, &dwDisposition);
     RegCloseKey(hKeyInnerStruct);
 
     HKEY hKeyInner1;
-    CreateOrOpenKey(hKeyRoot, L"key 0", hKeyInner1);
+    RegCreateKeyExW(hKeyRoot, L"key 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner1, &dwDisposition);
     std::wstring szValueDataInner1 = L"inner_1_sz_string_value";
-    SetValue(hKeyInner1, L"test_inner_1", REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner1.c_str()), MAX_VALUE_NAME);
+    RegSetValueExW(hKeyInner1, L"test_inner_1", 0, REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner1.c_str()), MAX_VALUE_NAME);
     RegCloseKey(hKeyInner1);
 
     HKEY hKeyInner2;
-    CreateOrOpenKey(hKeyRoot, L"key 0\\skey 1", hKeyInner2);
+    RegCreateKeyExW(hKeyRoot, L"key 0\\skey 1", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner2, &dwDisposition);
     std::wstring szValueDataInner2 = L"inner_2_sz_string_value";
-    SetValue(hKeyInner2, L"test_inner_2", REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner2.c_str()), MAX_VALUE_NAME);
+    RegSetValueExW(hKeyInner2, L"test_inner_2", 0, REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner2.c_str()), MAX_VALUE_NAME);
     RegCloseKey(hKeyInner2);
 
     HKEY hKeyInner3;
-    CreateOrOpenKey(hKeyRoot, L"key 0\\skey 1\\sskey 0", hKeyInner3);
+    RegCreateKeyExW(hKeyRoot, L"key 0\\skey 1\\sskey 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner3, &dwDisposition);
     std::wstring szValueDataInner3 = L"inner_3_sz_string_value";
-    SetValue(hKeyInner3, L"test_inner_3", REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner3.c_str()), MAX_VALUE_NAME);
+    RegSetValueExW(hKeyInner3, L"test_inner_3", 0, REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner3.c_str()), MAX_VALUE_NAME);
     RegCloseKey(hKeyInner3);
 
     // Close the opened root key
     RegCloseKey(hKeyRoot);
 
-    MessageBoxW(hWnd, L"Тестовые ключи и значения успешно добавлены.", L"Успех", MB_OK | MB_ICONINFORMATION);
+    MessageBoxW(hWnd, L"Test keys and values are added successfully", L"Success", MB_OK | MB_ICONINFORMATION);
 
     ExpandTreeViewToPath(L"HKEY_CURRENT_USER\\SOFTWARE\\1test_key");
 }
 
 
 
-// Функция раскрывает ключ в дереве реестра
-VOID ExpandKey(CONST LPARAM& lParam)
-{
-    LPNMTREEVIEWW lpnmtv = (LPNMTREEVIEWW)lParam;
-    HTREEITEM hItem = lpnmtv->itemNew.hItem;
+// Views
 
-    TVITEMEX tvItem;
-    tvItem.mask = TVIF_CHILDREN | TVIF_PARAM;
-    tvItem.hItem = hItem;
-    SendMessageW(hWndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
-
-    if (tvItem.cChildren == 1)
-    {
-        // Get the HKEY of the selected registry key
-        WCHAR* szKey = new WCHAR[MAX_KEY_LENGTH];
-        tvItem.mask = TVIF_TEXT;
-        tvItem.pszText = szKey;
-        tvItem.cchTextMax = MAX_KEY_LENGTH;
-        SendMessageW(hWndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
-
-        // Get the TREE_NODE_INFO structure from the expanded node
-        PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)tvItem.lParam;
-        HKEY hParentKey;
-        WCHAR szPath[MAX_PATH] = { 0 };
-        // Get the parent registry key
-        if (pNodeInfo)
-        {
-            wcscpy_s(szPath, pNodeInfo->szPath);
-            hParentKey = GetHKEYFromString(pNodeInfo->hKey);
-        }
-        else {
-            wcscpy_s(szPath, L"");
-            hParentKey = GetHKEYFromString(szKey);
-        }
-
-        delete[] szKey;
-
-        // Open the selected registry key
-        HKEY hKey = NULL;
-        if (RegOpenKeyExW(hParentKey, szPath, 0, KEY_ENUMERATE_SUB_KEYS, &hKey) == ERROR_SUCCESS)
-        {
-            // If the item already has children, skip loading them again
-            HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hItem);
-            if (hChildItem != NULL)
-            {
-				return;
-			}
-
-            // Enumerate subkeys
-            WCHAR szSubkey[MAX_KEY_LENGTH];
-            DWORD dwIndex = 0;
-            DWORD cchSubkey = MAX_KEY_LENGTH;
-            while (RegEnumKeyExW(hKey, dwIndex, szSubkey, &cchSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
-            {
-                HKEY hSubKey;
-                BOOL hasChildren = FALSE;
-                if (RegOpenKeyExW(hKey, szSubkey, 0, KEY_ENUMERATE_SUB_KEYS, &hSubKey) == ERROR_SUCCESS)
-                {
-                    WCHAR szChildSubkey[MAX_KEY_LENGTH];
-                    DWORD cchChildSubkey = MAX_KEY_LENGTH;
-                    hasChildren = (RegEnumKeyExW(hSubKey, 0, szChildSubkey, &cchChildSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS);
-                    RegCloseKey(hSubKey);
-                }
-
-                // Construct the full path of the subkey
-                WCHAR szhKey[MAX_ROOT_KEY_LENGTH] = { 0 };
-                wcscpy_s(szhKey, GetStringFromHKEY(hParentKey));
-
-                WCHAR szNewPath[MAX_PATH] = { 0 };
-                if (!lstrcmpW(szPath, L""))
-                {
-                    wcscpy_s(szNewPath, szSubkey);
-                }
-                else {
-                    wcscpy_s(szNewPath, szPath);
-                    wcscat_s(szNewPath, L"\\");
-                    wcscat_s(szNewPath, szSubkey);
-                }
-
-                // Insert subkey into treeview
-                TVINSERTSTRUCTW tvInsert;
-                tvInsert.hParent = hItem;
-                tvInsert.hInsertAfter = TVI_LAST;
-                tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_PARAM;
-                tvInsert.item.pszText = szSubkey;
-                tvInsert.item.cChildren = hasChildren ? 1 : 0;
-                tvInsert.item.iImage = 1;               // папка
-                tvInsert.item.iSelectedImage = 0;       // открытая папка
-
-                // Allocate memory for node info
-                PTREE_NODE_INFO pNodeInfo = new TREE_NODE_INFO;
-                wcscpy_s(pNodeInfo->hKey, MAX_KEY_LENGTH, szhKey);
-                wcscpy_s(pNodeInfo->szPath, MAX_PATH, szNewPath);
-
-                tvInsert.item.lParam = (LPARAM)pNodeInfo;
-                SendMessageW(hWndTV, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
-
-                // Reset variables for next subkey
-                dwIndex++;
-                cchSubkey = MAX_KEY_LENGTH;
-            }
-
-            // Close registry key
-            RegCloseKey(hKey);
-        }
-    }
-}
-
-// Функция отображает значения выбранного ключа
-VOID ShowKeyValues(CONST LPARAM& lParam)
+// Shows the values of the specified registry key
+VOID ShowValues(CONST LPARAM& lParam)
 {
     LPNMTREEVIEWW lpnmtv = (LPNMTREEVIEWW)lParam;
     HTREEITEM hItem = lpnmtv->itemNew.hItem;
@@ -791,77 +694,333 @@ VOID ShowKeyValues(CONST LPARAM& lParam)
     }
 }
 
-// Функция удаляет все элементы дерева
-VOID DeleteTreeItemsRecursively(HTREEITEM hItem)
+// Expands the tree view to the specified path
+VOID ExpandTreeViewToPath(CONST WCHAR* pszPath)
 {
-    HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hItem);
-    while (hChildItem)
+    WCHAR szFullPath[MAX_PATH];
+    wcscpy_s(szFullPath, MAX_PATH, pszPath);
+
+    // Separate the path into segments
+    WCHAR* pContext = NULL;
+    WCHAR* pSegment = wcstok_s(szFullPath, L"\\", &pContext);
+
+    HTREEITEM hCurrentItem = TreeView_GetRoot(hWndTV);
+
+    while (pSegment != NULL && hCurrentItem != NULL)
     {
-        DeleteTreeItemsRecursively(hChildItem);
-        hChildItem = TreeView_GetNextSibling(hWndTV, hChildItem);
+        // Check if the current segment matches the item text
+        WCHAR szItemText[MAX_PATH] = { 0 };
+        TVITEMW tvItem;
+        tvItem.mask = TVIF_TEXT;
+        tvItem.hItem = hCurrentItem;
+        tvItem.pszText = szItemText;
+        tvItem.cchTextMax = MAX_PATH;
+        TreeView_GetItem(hWndTV, &tvItem);
+
+        if (wcscmp(pSegment, szItemText) == 0)
+        {
+            // Expand the current item
+            TreeView_Expand(hWndTV, hCurrentItem, TVE_EXPAND);
+
+            // Get the next segment
+            pSegment = wcstok_s(NULL, L"\\", &pContext);
+
+            if (pSegment == NULL)
+            {
+                // Select the last item
+                TreeView_SelectItem(hWndTV, hCurrentItem);
+                TreeView_EnsureVisible(hWndTV, hCurrentItem);
+
+                HTREEITEM hSelected = TreeView_GetSelection(hWndTV);
+                if (hSelected != NULL)
+                {
+                    // Get the associated data of the selected item (if any)
+                    TVITEMW item;
+                    item.hItem = hSelected;
+                    item.mask = TVIF_PARAM;
+                    TreeView_GetItem(hWndTV, &item);
+                    PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)item.lParam;
+
+                    // Show the key from the registry by the address
+                    if (pNodeInfo != NULL)
+                    {
+                        HKEY hParentKey = GetHKEYFromString(pNodeInfo->hKey);
+                        const WCHAR* szSubKeyPath = pNodeInfo->szPath;
+
+                        HKEY hKey;
+                        if (RegOpenKeyExW(hParentKey, szSubKeyPath, 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+                        {
+                            PopulateListView(hKey);
+                            RegCloseKey(hKey);
+                        }
+                    }
+                }
+
+                // Found the last segment, break the loop
+                break;
+            }
+
+            // Get the child item that matches the next segment
+            hCurrentItem = TreeView_GetChild(hWndTV, hCurrentItem);
+            while (hCurrentItem != NULL)
+            {
+                TVITEMW tvChildItem;
+                tvChildItem.mask = TVIF_TEXT;
+                tvChildItem.hItem = hCurrentItem;
+                tvChildItem.pszText = szItemText;
+                tvChildItem.cchTextMax = MAX_PATH;
+                TreeView_GetItem(hWndTV, &tvChildItem);
+
+                if (wcscmp(pSegment, szItemText) == 0)
+                {
+                    // Found the next segment, break the loop and continue expanding
+                    break;
+                }
+
+                // Get the next sibling item
+                hCurrentItem = TreeView_GetNextSibling(hWndTV, hCurrentItem);
+            }
+        }
+        else
+        {
+            // Get the next sibling item
+            hCurrentItem = TreeView_GetNextSibling(hWndTV, hCurrentItem);
+        }
     }
-
-    TVITEM item;
-    item.mask = TVIF_PARAM;
-    item.hItem = hItem;
-    TreeView_GetItem(hWndTV, &item);
-
-    if (item.lParam)
-    {
-        PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)item.lParam;
-        delete pNodeInfo;
-    }
-
-    TreeView_DeleteItem(hWndTV, hItem);
 }
 
-// Функция сравнения имён двух элементов дерева
-UINT CompareValueNamesEx(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort)
+// Loads the registry values from the specified key into the ListView
+VOID PopulateListView(CONST HKEY& hKey)
 {
-    TREE_NODE_DATA* data = (TREE_NODE_DATA*)lParamSort;
+    // Clear the ListView.
+    ListView_DeleteAllItems(hWndLV);
 
-    WCHAR* buf1 = new WCHAR[MAX_VALUE_NAME];
-    WCHAR* buf2 = new WCHAR[MAX_VALUE_NAME];
+    DWORD dwIndex = 0;
+    WCHAR* szValueName = new WCHAR[MAX_VALUE_NAME];
+    DWORD dwValueNameSize = MAX_VALUE_NAME;
+    DWORD dwType = 0;
+    BYTE* data = new BYTE[MAX_VALUE_NAME];
+    DWORD dwDataSize = MAX_VALUE_NAME;
 
-    ListView_GetItemText(data->hList, lParam1, data->iSubItem, buf1, MAX_VALUE_NAME);
-    ListView_GetItemText(data->hList, lParam2, data->iSubItem, buf2, MAX_VALUE_NAME);
+    while (RegEnumValueW(hKey, dwIndex, szValueName, &dwValueNameSize, NULL, &dwType, data, &dwDataSize) == ERROR_SUCCESS)
+    {
+        LVITEM lvi = { 0 };
+        lvi.mask = LVIF_TEXT | LVIF_PARAM;
+        lvi.iItem = dwIndex;
 
-    INT res = wcscmp(buf1, buf2);
+        // Insert the value name.
+        lvi.iSubItem = 0;
+        lvi.pszText = szValueName;
+        lvi.lParam = (LPARAM)dwType;
+        ListView_InsertItem(hWndLV, &lvi);
 
-    delete[] buf1;
-    delete[] buf2;
+        // Insert the value type.
+        lvi.mask = LVIF_TEXT;
+        lvi.iSubItem = 1;
+        lvi.pszText = (LPWSTR)RegTypeToString(dwType);
+        ListView_SetItem(hWndLV, &lvi);
 
-    return data->bSortAscending ? res >= 0 : res <= 0;
+        // Insert the value data.
+        lvi.iSubItem = 2;
+        lvi.pszText = (LPWSTR)RegDataToString(data, dwType, dwDataSize);
+        ListView_SetItem(hWndLV, &lvi);
+
+        dwIndex++;
+        dwValueNameSize = MAX_VALUE_NAME;
+        dwDataSize = MAX_VALUE_NAME;
+    }
+
+    TREE_NODE_DATA treeData;
+    treeData.hList = hWndLV;
+    treeData.iSubItem = 0;
+    treeData.bSortAscending = TRUE;
+
+    // Sort the ListView items by the first column.
+    ListView_SortItemsEx(hWndLV, CompareValueNamesEx, &treeData);
+
+    // Delete the dynamically allocated memory.
+    delete[] szValueName;
+    delete[] data;
+
+    // Set the selection in the list view
+    ListView_SetItemState(hWndLV, 0, LVIS_FOCUSED | LVIS_SELECTED, LVIS_FOCUSED | LVIS_SELECTED);
 }
 
-// Функция создания или открытия ключа
-VOID CreateOrOpenKey(CONST HKEY& parentKey, LPCWSTR keyName, HKEY& outKey)
+// Refreshes the tree view
+VOID UpdateTreeView()
 {
-    DWORD dwDisposition;
-    if (RegCreateKeyExW(parentKey, keyName, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &outKey, &dwDisposition) != ERROR_SUCCESS)
+    WCHAR szFullPath[MAX_PATH];
+    GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+    ExpandTreeViewToPath(szFullPath);
+}
+
+// Refreshes the list view
+VOID UpdateListView()
+{
+    // Get the currently selected key
+    HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
+    if (hSelectedItem)
     {
-        MessageBoxW(hWnd, L"Failed to create or open key.", L"Error", MB_OK | MB_ICONERROR);
+        WCHAR szFullPath[MAX_PATH];
+        GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
+        WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
+        WCHAR szSubKeyPath[MAX_PATH] = L"";
+        SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
+
+        HKEY hKey;
+        if (RegOpenKeyExW(GetHKEYFromString(szRootKeyName), szSubKeyPath, NULL, KEY_READ, &hKey) == ERROR_SUCCESS)
+        {
+            // populate the listview with the values of the selected key
+            PopulateListView(hKey);
+            RegCloseKey(hKey);
+        }
     }
 }
 
-// Функция задания значения в ключе
-VOID SetValue(CONST HKEY& key, LPCWSTR valueName, DWORD type, CONST BYTE* data, DWORD dataSize)
+// Selects the tree view item under the cursor
+VOID SelectClickedKey()
 {
-    if (RegSetValueExW(key, valueName, 0, type, data, dataSize) != ERROR_SUCCESS)
+    // Get the position of the right-click
+    POINT pt;
+    GetCursorPos(&pt);
+
+    // Convert the client coordinates to the tree view coordinates
+    ScreenToClient(hWndTV, &pt);
+
+    // Perform hit testing to determine the item under the cursor
+    TVHITTESTINFO htInfo;
+    htInfo.pt = pt;
+    TreeView_HitTest(hWndTV, &htInfo);
+
+    // Check if a tree view item was clicked
+    if (htInfo.hItem != NULL)
     {
-        MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
+        // Select the item under the cursor
+        TreeView_SelectItem(hWndTV, htInfo.hItem);
     }
 }
 
 
 
-// Функция вызова диалогового окна поиска ключей и значений
+// Triggers
+
+// User clicks on the "Search" button
 INT_PTR OnSearch()
 {
-    return DialogBoxW(GetModuleHandleW(NULL), MAKEINTRESOURCE(IDD_SEARCH), hWnd, SearchDlgProc);
+    return DialogBoxW(GetModuleHandleW(NULL), MAKEINTRESOURCE(IDD_FIND), hWnd, SearchDlgProc);
 }
 
-// Функция сортировки элементов ListView
+// User clicks to expand a tree view item
+INT_PTR OnKeyExpand(CONST LPARAM& lParam)
+{
+    LPNMTREEVIEWW lpnmtv = (LPNMTREEVIEWW)lParam;
+    HTREEITEM hItem = lpnmtv->itemNew.hItem;
+
+    TVITEMEX tvItem;
+    tvItem.mask = TVIF_CHILDREN | TVIF_PARAM;
+    tvItem.hItem = hItem;
+    SendMessageW(hWndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
+
+    if (tvItem.cChildren == 1)
+    {
+        // Get the HKEY of the selected registry key
+        WCHAR* szKey = new WCHAR[MAX_KEY_LENGTH];
+        tvItem.mask = TVIF_TEXT;
+        tvItem.pszText = szKey;
+        tvItem.cchTextMax = MAX_KEY_LENGTH;
+        SendMessageW(hWndTV, TVM_GETITEM, 0, (LPARAM)&tvItem);
+
+        // Get the TREE_NODE_INFO structure from the expanded node
+        PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)tvItem.lParam;
+        HKEY hParentKey;
+        WCHAR szPath[MAX_PATH] = { 0 };
+        // Get the parent registry key
+        if (pNodeInfo)
+        {
+            wcscpy_s(szPath, pNodeInfo->szPath);
+            hParentKey = GetHKEYFromString(pNodeInfo->hKey);
+        }
+        else {
+            wcscpy_s(szPath, L"");
+            hParentKey = GetHKEYFromString(szKey);
+        }
+
+        delete[] szKey;
+
+        // Open the selected registry key
+        HKEY hKey = NULL;
+        if (RegOpenKeyExW(hParentKey, szPath, 0, KEY_ENUMERATE_SUB_KEYS, &hKey) == ERROR_SUCCESS)
+        {
+            // If the item already has children, skip loading them again
+            HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hItem);
+            if (hChildItem != NULL)
+            {
+                return FALSE;
+            }
+
+            // Enumerate subkeys
+            WCHAR szSubkey[MAX_KEY_LENGTH];
+            DWORD dwIndex = 0;
+            DWORD cchSubkey = MAX_KEY_LENGTH;
+            while (RegEnumKeyExW(hKey, dwIndex, szSubkey, &cchSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
+            {
+                HKEY hSubKey;
+                BOOL hasChildren = FALSE;
+                if (RegOpenKeyExW(hKey, szSubkey, 0, KEY_ENUMERATE_SUB_KEYS, &hSubKey) == ERROR_SUCCESS)
+                {
+                    WCHAR szChildSubkey[MAX_KEY_LENGTH];
+                    DWORD cchChildSubkey = MAX_KEY_LENGTH;
+                    hasChildren = (RegEnumKeyExW(hSubKey, 0, szChildSubkey, &cchChildSubkey, NULL, NULL, NULL, NULL) == ERROR_SUCCESS);
+                    RegCloseKey(hSubKey);
+                }
+
+                // Construct the full path of the subkey
+                WCHAR szhKey[MAX_ROOT_KEY_LENGTH] = { 0 };
+                wcscpy_s(szhKey, GetStringFromHKEY(hParentKey));
+
+                WCHAR szNewPath[MAX_PATH] = { 0 };
+                if (!lstrcmpW(szPath, L""))
+                {
+                    wcscpy_s(szNewPath, szSubkey);
+                }
+                else {
+                    wcscpy_s(szNewPath, szPath);
+                    wcscat_s(szNewPath, L"\\");
+                    wcscat_s(szNewPath, szSubkey);
+                }
+
+                // Insert subkey into treeview
+                TVINSERTSTRUCTW tvInsert;
+                tvInsert.hParent = hItem;
+                tvInsert.hInsertAfter = TVI_LAST;
+                tvInsert.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_PARAM;
+                tvInsert.item.pszText = szSubkey;
+                tvInsert.item.cChildren = hasChildren ? 1 : 0;
+                tvInsert.item.iImage = 1;               // folder
+                tvInsert.item.iSelectedImage = 0;       // opened folder
+
+                // Allocate memory for node info
+                PTREE_NODE_INFO pNodeInfo = new TREE_NODE_INFO;
+                wcscpy_s(pNodeInfo->hKey, MAX_KEY_LENGTH, szhKey);
+                wcscpy_s(pNodeInfo->szPath, MAX_PATH, szNewPath);
+
+                tvInsert.item.lParam = (LPARAM)pNodeInfo;
+                SendMessageW(hWndTV, TVM_INSERTITEM, 0, (LPARAM)&tvInsert);
+
+                // Reset variables for next subkey
+                dwIndex++;
+                cchSubkey = MAX_KEY_LENGTH;
+            }
+
+            // Close registry key
+            RegCloseKey(hKey);
+
+            return TRUE;
+        }
+    }
+}
+
+// User clicks on the "Delete" button
 INT_PTR OnColumnClickEx(CONST LPARAM& lParam)
 {
     LPNMLISTVIEW pLVInfo = (LPNMLISTVIEW)lParam;
@@ -880,7 +1039,7 @@ INT_PTR OnColumnClickEx(CONST LPARAM& lParam)
     return ListView_SortItemsEx(pLVInfo->hdr.hwndFrom, CompareValueNamesEx, &data);
 }
 
-// Функция обрабатывает смену имени ключа
+// User edits the registry key name
 INT_PTR OnEndLabelEditKeyEx(CONST LPARAM& lParam)
 {
     LPNMTVDISPINFOW pTVInfo = (LPNMTVDISPINFOW)lParam;
@@ -920,7 +1079,7 @@ INT_PTR OnEndLabelEditKeyEx(CONST LPARAM& lParam)
 	return TRUE;
 }
 
-// Функция обрабатывает смену имени значения
+// User edits the registry value name
 INT_PTR OnEndLabelEditValueEx(CONST LPARAM& lParam)
 {
     NMLVDISPINFOW* pLVDispInfo = (NMLVDISPINFOW*)lParam;
@@ -1002,7 +1161,9 @@ INT_PTR OnEndLabelEditValueEx(CONST LPARAM& lParam)
 
 
 
-// Функция поиска ключей/значений в реестре
+// Search
+
+// Outer search, returns the path of the found key or value
 LPWSTR SearchRegistry(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wstring& searchTerm, BOOL bSearchKeys, BOOL bSearchValues)
 {
     // First, perform the usual recursive search in the selected key
@@ -1036,7 +1197,7 @@ LPWSTR SearchRegistry(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wst
     return nullptr;
 }
 
-// Функция рекурсивного поиска в реестре, возвращает путь к найденному ключу или значение, алгоритм DFS
+// Recursive search, DFS algorithm
 LPWSTR SearchRegistryRecursive(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wstring& searchTerm, BOOL bSearchKeys, BOOL bSearchValues)
 {
     if (bIsSearchCancelled) {
@@ -1164,223 +1325,11 @@ LPWSTR SearchRegistryRecursive(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST
     return nullptr; // No match found
 }
 
-// Функция возвращает имя родительского ключа
-std::wstring GetParentKeyPath(CONST std::wstring& keyPath)
-{
-    size_t pos = keyPath.rfind(L'\\');
-    if (pos == std::wstring::npos)
-        return L"";  // Root key, no parent
-    else
-        return keyPath.substr(0, pos);
-}
 
-// Функция раскрывает ключ по заданному пути
-VOID ExpandTreeViewToPath(CONST WCHAR* pszPath)
-{
-    WCHAR szFullPath[MAX_PATH];
-    wcscpy_s(szFullPath, MAX_PATH, pszPath);
 
-    // Separate the path into segments
-    WCHAR* pContext = NULL;
-    WCHAR* pSegment = wcstok_s(szFullPath, L"\\", &pContext);
+// Context Menu
 
-    HTREEITEM hCurrentItem = TreeView_GetRoot(hWndTV);
-
-    while (pSegment != NULL && hCurrentItem != NULL)
-    {
-        // Check if the current segment matches the item text
-        WCHAR szItemText[MAX_PATH] = { 0 };
-        TVITEMW tvItem;
-        tvItem.mask = TVIF_TEXT;
-        tvItem.hItem = hCurrentItem;
-        tvItem.pszText = szItemText;
-        tvItem.cchTextMax = MAX_PATH;
-        TreeView_GetItem(hWndTV, &tvItem);
-
-        if (wcscmp(pSegment, szItemText) == 0)
-        {
-            // Expand the current item
-            TreeView_Expand(hWndTV, hCurrentItem, TVE_EXPAND);
-
-            // Get the next segment
-            pSegment = wcstok_s(NULL, L"\\", &pContext);
-
-            if (pSegment == NULL)
-            {
-                // Select the last item
-                TreeView_SelectItem(hWndTV, hCurrentItem);
-                TreeView_EnsureVisible(hWndTV, hCurrentItem);
-
-                HTREEITEM hSelected = TreeView_GetSelection(hWndTV);
-                if (hSelected != NULL)
-                {
-                    // Get the associated data of the selected item (if any)
-                    TVITEMW item;
-                    item.hItem = hSelected;
-                    item.mask = TVIF_PARAM;
-                    TreeView_GetItem(hWndTV, &item);
-                    PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)item.lParam;
-
-                    // Show the key from the registry by the address
-                    if (pNodeInfo != NULL)
-                    {
-                        HKEY hParentKey = GetHKEYFromString(pNodeInfo->hKey);
-                        const WCHAR* szSubKeyPath = pNodeInfo->szPath;
-
-                        HKEY hKey;
-                        if (RegOpenKeyExW(hParentKey, szSubKeyPath, 0, KEY_READ, &hKey) == ERROR_SUCCESS)
-                        {
-                            PopulateListView(hKey);
-							RegCloseKey(hKey);
-						}
-                    }
-                }
-
-                // Found the last segment, break the loop
-				break;
-			}
-
-            // Get the child item that matches the next segment
-            hCurrentItem = TreeView_GetChild(hWndTV, hCurrentItem);
-            while (hCurrentItem != NULL)
-            {
-                TVITEMW tvChildItem;
-                tvChildItem.mask = TVIF_TEXT;
-                tvChildItem.hItem = hCurrentItem;
-                tvChildItem.pszText = szItemText;
-                tvChildItem.cchTextMax = MAX_PATH;
-                TreeView_GetItem(hWndTV, &tvChildItem);
-
-                if (wcscmp(pSegment, szItemText) == 0)
-                {
-                    // Found the next segment, break the loop and continue expanding
-                    break;
-                }
-
-                // Get the next sibling item
-                hCurrentItem = TreeView_GetNextSibling(hWndTV, hCurrentItem);
-            }
-        }
-        else
-        {
-            // Get the next sibling item
-            hCurrentItem = TreeView_GetNextSibling(hWndTV, hCurrentItem);
-        }
-    }
-}
-
-// Функция заполняет ListView значениями из реестра
-VOID PopulateListView(CONST HKEY& hKey)
-{
-    // Clear the ListView.
-    ListView_DeleteAllItems(hWndLV);
-
-    DWORD dwIndex = 0;
-    WCHAR* szValueName = new WCHAR[MAX_VALUE_NAME];
-    DWORD dwValueNameSize = MAX_VALUE_NAME;
-    DWORD dwType = 0;
-    BYTE* data = new BYTE[MAX_VALUE_NAME];
-    DWORD dwDataSize = MAX_VALUE_NAME;
-
-    while (RegEnumValueW(hKey, dwIndex, szValueName, &dwValueNameSize, NULL, &dwType, data, &dwDataSize) == ERROR_SUCCESS)
-    {
-        LVITEM lvi = { 0 };
-        lvi.mask = LVIF_TEXT | LVIF_PARAM;
-        lvi.iItem = dwIndex;
-
-        // Insert the value name.
-        lvi.iSubItem = 0;
-        lvi.pszText = szValueName;
-        lvi.lParam = (LPARAM)dwType;
-        ListView_InsertItem(hWndLV, &lvi);
-
-        // Insert the value type.
-        lvi.mask = LVIF_TEXT;
-        lvi.iSubItem = 1;
-        lvi.pszText = (LPWSTR)RegTypeToString(dwType);
-        ListView_SetItem(hWndLV, &lvi);
-
-        // Insert the value data.
-        lvi.iSubItem = 2;
-        lvi.pszText = (LPWSTR)RegDataToString(data, dwType, dwDataSize);
-        ListView_SetItem(hWndLV, &lvi);
-
-        dwIndex++;
-        dwValueNameSize = MAX_VALUE_NAME;
-        dwDataSize = MAX_VALUE_NAME;
-    }
-
-    TREE_NODE_DATA treeData;
-    treeData.hList = hWndLV;
-    treeData.iSubItem = 0;
-    treeData.bSortAscending = TRUE;
-
-    // Sort the ListView items by the first column.
-    ListView_SortItemsEx(hWndLV, CompareValueNamesEx, &treeData);
-
-    // Delete the dynamically allocated memory.
-    delete[] szValueName;
-    delete[] data;
-
-    // Set the selection in the list view
-    ListView_SetItemState(hWndLV, 0, LVIS_FOCUSED | LVIS_SELECTED, LVIS_FOCUSED | LVIS_SELECTED);
-}
-
-// Функция обновляет ключ реестра
-VOID UpdateTreeView()
-{
-	WCHAR szFullPath[MAX_PATH];
-	GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
-    ExpandTreeViewToPath(szFullPath);
-}
-
-// Функция обновляет значения ключа реестра
-VOID UpdateListView()
-{
-    // Get the currently selected key
-    HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
-    if (hSelectedItem)
-    {
-        WCHAR szFullPath[MAX_PATH];
-        GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
-        WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
-        WCHAR szSubKeyPath[MAX_PATH] = L"";
-        SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
-
-        HKEY hKey;
-        if (RegOpenKeyExW(GetHKEYFromString(szRootKeyName), szSubKeyPath, NULL, KEY_READ, &hKey) == ERROR_SUCCESS)
-        {
-            // populate the listview with the values of the selected key
-            PopulateListView(hKey);
-            RegCloseKey(hKey);
-        }
-    }
-}
-
-// Функция выбирает элемент дерева по щелчку правой кнопкой мыши
-VOID SelectClickedKey()
-{
-    // Get the position of the right-click
-    POINT pt;
-    GetCursorPos(&pt);
-
-    // Convert the client coordinates to the tree view coordinates
-    ScreenToClient(hWndTV, &pt);
-
-    // Perform hit testing to determine the item under the cursor
-    TVHITTESTINFO htInfo;
-    htInfo.pt = pt;
-    TreeView_HitTest(hWndTV, &htInfo);
-
-    // Check if a tree view item was clicked
-    if (htInfo.hItem != NULL)
-    {
-        // Select the item under the cursor
-        TreeView_SelectItem(hWndTV, htInfo.hItem);
-    }
-}
-
-// Функция показывает контекстное меню для ключа
+// Key Menu
 VOID ShowKeyMenu()
 {
     // Create the context menu
@@ -1390,11 +1339,11 @@ VOID ShowKeyMenu()
         HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
         // Add the menu items
         BOOL bExpanded = TreeView_GetItemState(hWndTV, hSelectedItem, TVIS_EXPANDED) & TVIS_EXPANDED;
-        AddMenuOption(hContextMenu, bExpanded ? L"Закрыть" : L"Открыть", IDM_KEY_EXPAND_COLLAPSE, MF_STRING);
-        AddMenuOption(hContextMenu, L"Новый ключ", IDM_NEW_KEY, MF_STRING);
-        AddMenuOption(hContextMenu, L"Найти", IDD_SEARCH, MF_STRING);
-        AddMenuOption(hContextMenu, L"Удалить", IDM_DELETE_KEY, MF_STRING);
-        AddMenuOption(hContextMenu, L"Переименовать", IDM_RENAME_KEY, MF_STRING);
+        AddMenuOption(hContextMenu, bExpanded ? L"Collapse" : L"Expand", IDM_KEY_EXPAND_COLLAPSE, MF_STRING);
+        AddMenuOption(hContextMenu, L"New Key", IDM_NEW_KEY, MF_STRING);
+        AddMenuOption(hContextMenu, L"Find", IDD_FIND, MF_STRING);
+        AddMenuOption(hContextMenu, L"Rename", IDM_RENAME_KEY, MF_STRING);
+        AddMenuOption(hContextMenu, L"Delete", IDM_DELETE_KEY, MF_STRING);
 
         // Get the current mouse position
         POINT pt;
@@ -1406,7 +1355,7 @@ VOID ShowKeyMenu()
     }
 }
 
-// Функция добавляет пункт меню для ключа
+// Inserts a menu item into a menu
 VOID AddMenuOption(HMENU hMenu, LPCWSTR lpText, UINT uID, UINT uFlags)
 {
     MENUITEMINFOW mii = { 0 };
@@ -1418,7 +1367,7 @@ VOID AddMenuOption(HMENU hMenu, LPCWSTR lpText, UINT uID, UINT uFlags)
     InsertMenuItemW(hMenu, -1, TRUE, &mii);
 }
 
-// Функция показывает контекстное меню для создания нового значения
+// New Value Menu
 VOID ShowNewValueMenu()
 {
     // Check if the user has selected an item
@@ -1431,11 +1380,11 @@ VOID ShowNewValueMenu()
         if (hSubMenu)
         {
             // Append items to the submenu
-            AppendMenuW(hSubMenu, MF_STRING, IDM_CREATE_STRING_VALUE, L"Текстовое значение");
-            AppendMenuW(hSubMenu, MF_STRING, IDM_CREATE_DWORD_VALUE, L"Значение DWORD (32-bit)");
+            AppendMenuW(hSubMenu, MF_STRING, IDM_CREATE_STRING_VALUE, L"String Value");
+            AppendMenuW(hSubMenu, MF_STRING, IDM_CREATE_DWORD_VALUE, L"DWORD (32-bit) Value");
 
             // Append the "New" item with the submenu
-            AppendMenuW(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, L"Добавить");
+            AppendMenuW(hMenu, MF_POPUP, (UINT_PTR)hSubMenu, L"Add");
         }
         // Get the current mouse position
         POINT pt;
@@ -1447,7 +1396,7 @@ VOID ShowNewValueMenu()
     }
 }
 
-// Функция показывает контекстное меню для редактирования значения
+// Edit Value Menu
 VOID ShowEditValueMenu()
 {
     // An item is selected, show a menu with all the items 
@@ -1455,9 +1404,9 @@ VOID ShowEditValueMenu()
     if (hMenu)
     {
         // Append items to the menu. The third parameter is the item identifier which you'll use in the WM_COMMAND message.
-        AppendMenuW(hMenu, MF_STRING, IDD_MODIFY_VALUE, L"Изменить");
-        AppendMenuW(hMenu, MF_STRING, IDM_DELETE_VALUE, L"Удалить");
-        AppendMenuW(hMenu, MF_STRING, IDM_RENAME_VALUE, L"Переименовать");
+        AppendMenuW(hMenu, MF_STRING, IDD_MODIFY_VALUE, L"Modify");
+        AppendMenuW(hMenu, MF_STRING, IDM_RENAME_VALUE, L"Rename");
+        AppendMenuW(hMenu, MF_STRING, IDM_DELETE_VALUE, L"Delete");
 
         // Get the current mouse position
         POINT pt;
@@ -1473,7 +1422,9 @@ VOID ShowEditValueMenu()
 
 
 
-// Функция создает новый ключ
+// Modifiers
+
+// Inserts a new key into the registry
 VOID CreateKey()
 {
     // Get the key path from the edit control.
@@ -1550,8 +1501,8 @@ VOID CreateKey()
             insertStruct.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_PARAM;
             insertStruct.item.pszText = szKeyName;
             insertStruct.item.cChildren = 0;
-            insertStruct.item.iImage = 1;               // папка
-            insertStruct.item.iSelectedImage = 0;       // открытая папка
+            insertStruct.item.iImage = 1;               // folder
+            insertStruct.item.iSelectedImage = 0;       // opened folder
 
             // Set the parent node to have children
             TVITEMW parentItem;
@@ -1598,7 +1549,18 @@ VOID CreateKey()
     }
 }
 
-// Функция удаления ключа
+// Renames the selected value in the tree view
+VOID RenameKey()
+{
+    // Get the selected item in the list view
+    HTREEITEM hSelected = TreeView_GetSelection(hWndTV);
+    if (hSelected != NULL)
+    {
+        TreeView_EditLabel(hWndTV, hSelected);
+    }
+}
+
+// Deletes a key from the registry
 VOID DeleteKey()
 {
     // Retrieve the selected item in the tree view
@@ -1608,8 +1570,8 @@ VOID DeleteKey()
     if (hSelectedItem != NULL)
     {
         INT_PTR nRet = 0;
-        // Display a confirmation dialog box before deleting the value.
-        nRet = MessageBoxW(hWnd, L"Удаление определённых ключей реестра может привести к нестабильной работе системы. Вы действительно хотите удалить данный ключ и его подключи?", L"Подтверждение удаления ключа", MB_YESNO | MB_ICONWARNING);
+        // Display a confirmation dialog box before deleting the key.
+        nRet = MessageBoxW(hWnd, L"Deleting certain registry keys could cause system instability. Are you sure you want to permanently delete this key?", L"Confirm Key Delete", MB_YESNO | MB_ICONWARNING);
         if (nRet == IDYES)
         {
             // Get the associated data of the selected item (if any)
@@ -1652,7 +1614,7 @@ VOID DeleteKey()
     }
 }
 
-// Функция создает новое значение в реестре
+// Inserts a new value into the registry
 VOID CreateValue(CONST DWORD dwType)
 {
     WCHAR* szValueName = new WCHAR[MAX_VALUE_NAME];
@@ -1747,7 +1709,7 @@ VOID CreateValue(CONST DWORD dwType)
     delete[] szValueName;
 }
 
-// Функция модифицирует значение в реестре
+// Modifies the value of the selected value in the list view
 VOID ModifyValue()
 {
     // Get the selected item in the list view
@@ -1801,7 +1763,7 @@ VOID ModifyValue()
     }
 }
 
-// Функция переименовывает значение в реестре
+// Renames the selected key in the list view
 VOID RenameValue()
 {
     // Get the selected item in the list view
@@ -1812,18 +1774,7 @@ VOID RenameValue()
 	}
 }
 
-// Функция переименовывает ключ в реестре
-VOID RenameKey()
-{
-    // Get the selected item in the list view
-    HTREEITEM hSelected = TreeView_GetSelection(hWndTV);
-    if (hSelected != NULL)
-    {
-        TreeView_EditLabel(hWndTV, hSelected);
-    }
-}
-
-// Функция переименовывает значение из реестра через удаление старого и создание нового
+// Renames the value by deleting the old value and creating a new value with the new name
 CONST DWORD RenameRegValue(CONST HKEY& hKey, CONST WCHAR* szOldValueName, CONST WCHAR* szNewValueName)
 {
 	DWORD dwResult = ERROR_SUCCESS;
@@ -1860,7 +1811,7 @@ CONST DWORD RenameRegValue(CONST HKEY& hKey, CONST WCHAR* szOldValueName, CONST 
 	return dwResult;
 }
 
-// Функция удаляет значение из реестра
+// Deletes selected values in the list view
 VOID DeleteValues()
 {
     // Get the selected item in the list view
@@ -1870,11 +1821,11 @@ VOID DeleteValues()
     // Display a confirmation dialog box before deleting the value.
     if (iSelectedCount == 1)
     {
-        nRet = MessageBoxW(hWnd, L"Удаление определённых значений реестра может привести к нестабильной работе системы. Вы действительно хотите навсегда удалить это значение?", L"Подтверждение удаления значения", MB_YESNO | MB_ICONWARNING);
+        nRet = MessageBoxW(hWnd, L"Deleting certain registry values could cause system registry. Are you sure you want to permanently delete this value?", L"Confirm Value Delete", MB_YESNO | MB_ICONWARNING);
     }
     else if (iSelectedCount > 1) 
     {
-        nRet = MessageBoxW(hWnd, L"Удаление определённых значений реестра может привести к нестабильной работе системы. Вы действительно хотите навсегда удалить эти значения?", L"Подтверждение удаления значений", MB_YESNO | MB_ICONWARNING);
+        nRet = MessageBoxW(hWnd, L"Deleting certain registry values could cause system registry. Are you sure you want to permanently delete these values?", L"Confirm Value Delete", MB_YESNO | MB_ICONWARNING);
     }
     if (nRet == IDYES)
     {
@@ -1927,19 +1878,45 @@ VOID DeleteValues()
     }
 }
 
+// Cleans up the resources used by the treeview
+VOID DeleteTreeItemsRecursively(HTREEITEM hItem)
+{
+    HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hItem);
+    while (hChildItem)
+    {
+        DeleteTreeItemsRecursively(hChildItem);
+        hChildItem = TreeView_GetNextSibling(hWndTV, hChildItem);
+    }
+
+    TVITEM item;
+    item.mask = TVIF_PARAM;
+    item.hItem = hItem;
+    TreeView_GetItem(hWndTV, &item);
+
+    if (item.lParam)
+    {
+        PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)item.lParam;
+        delete pNodeInfo;
+    }
+
+    TreeView_DeleteItem(hWndTV, hItem);
+}
 
 
+
+// Callbacks
+
 //
-//  ФУНКЦИЯ: WndProc(HWND, UINT, WPARAM, LPARAM)
+//  FUNCTION: WndProc(HWND, UINT, WPARAM, LPARAM)
 //
-//  ЦЕЛЬ: Обрабатывает сообщения в главном окне.
+//  PURPOSE: Processes messages for the main window.
 //
-//  WM_CREATE      - создание элементов в главном окне
-//  WM_NOTIFY      - обработка уведомлений от дочерних элементов управления
-//  WM_COMMAND     - обработка меню приложения
-//  WM_CONTEXTMENU - обработка контекстных меню для дерева ключей и списка значений
-//  WM_PAINT       - отрисовка главного окна
-//  WM_DESTROY     - отправка сообщения о выходе и очистка памятиЦ
+//  WM_CREATE      - main windows elements creation
+//  WM_NOTIFY      - processes notifications from the treeview and listview
+//  WM_COMMAND     - processes menu commands and notifications from the edit control
+//  WM_CONTEXTMENU - processes the right-click menu
+//  WM_PAINT       - draws the main window
+//  WM_DESTROY     - sends a quit message and cleans up resources
 //
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -1971,13 +1948,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                         // on expanding of a treeview item
                         case TVN_ITEMEXPANDING:
                         {
-                            ExpandKey(lParam);
+                            OnKeyExpand(lParam);
                             break;
                         }
                         // on selection of a treeview item
                         case TVN_SELCHANGED:
                         {
-                            ShowKeyValues(lParam);
+                            ShowValues(lParam);
                             break;
                         }
                         case TVN_ENDLABELEDIT:
@@ -2034,7 +2011,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         }
         case WM_COMMAND:
         {
-            // Разобрать выбор в меню:
+            // Handle menu choice:
             switch (LOWORD(wParam))
             {
                 case IDM_KEY_EXPAND_COLLAPSE:
@@ -2051,7 +2028,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     CreateKey();
 					break;
 				}
-                case IDD_SEARCH:
+                case IDD_FIND:
                 {
                     return OnSearch();
                     break;
@@ -2138,7 +2115,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
-            // TODO: Добавьте сюда любой код прорисовки, использующий HDC...
             EndPaint(hWnd, &ps);
             break;
         }
@@ -2167,12 +2143,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 }
 
 //
-//  ФУНКЦИЯ: SearchDlgProc(HWND, UINT, WPARAM, LPARAM)
+//  FUNCTION: SearchDlgProc(HWND, UINT, WPARAM, LPARAM)
 //  
-//  ЦЕЛЬ: Обрабатывает сообщения для диалогового окна поиска ключей и значений в реестре Windows.
+//  PURPOSE: Processes messages for the search dialog.
 //
-//  WM_INITDIALOG - инициализирование диалогового окна.
-//  WM_COMMAND    - обработка команд диалогового окна.
+//  WM_INITDIALOG - dialog box initializer
+//  WM_COMMAND    - dialog box command handler
 //
 INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -2181,20 +2157,20 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
         case WM_INITDIALOG:
         {
             // Initialize the checkboxes and set them as checked
-            CheckDlgButton(hDlg, IDM_SEARCH_KEYS, BST_CHECKED);
-            CheckDlgButton(hDlg, IDM_SEARCH_VALUES, BST_CHECKED);
+            CheckDlgButton(hDlg, IDM_FIND_KEYS, BST_CHECKED);
+            CheckDlgButton(hDlg, IDM_FIND_VALUES, BST_CHECKED);
             return TRUE;
         }
         case WM_COMMAND:
         {
             switch (LOWORD(wParam))
             {
-                case IDM_SEARCH_KEYS:
-                case IDM_SEARCH_VALUES:
+                case IDM_FIND_KEYS:
+                case IDM_FIND_VALUES:
                 {
                     // Check the state of the checkboxes
-                    BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDM_SEARCH_KEYS);
-                    BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDM_SEARCH_VALUES);
+                    BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDM_FIND_KEYS);
+                    BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDM_FIND_VALUES);
 
                     // Enable/disable the search button based on the checkbox state
                     EnableWindow(GetDlgItem(hDlg, IDOK), bSearchKeys || bSearchValues);
@@ -2210,10 +2186,10 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
                         return TRUE;
 					}
                     WCHAR szSearchTerm[MAX_PATH];
-                    BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDM_SEARCH_KEYS);
-                    BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDM_SEARCH_VALUES);
+                    BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDM_FIND_KEYS);
+                    BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDM_FIND_VALUES);
 
-                    GetDlgItemTextW(hDlg, IDM_SEARCH_NAME, szSearchTerm, MAX_PATH);
+                    GetDlgItemTextW(hDlg, IDM_FIND_NAME, szSearchTerm, MAX_PATH);
 
                     wcscpy_s(pSearchData->szSearchTerm, szSearchTerm);
                     pSearchData->bSearchKeys = bSearchKeys;
@@ -2223,7 +2199,7 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 
                     EndDialog(hDlg, LOWORD(wParam));
 
-                    hFindDlg = CreateDialogW(hInst, MAKEINTRESOURCE(IDD_FIND), hWnd, FindDlgProc);
+                    hFindDlg = CreateDialogW(hInst, MAKEINTRESOURCE(IDD_SEARCH), hWnd, FindDlgProc);
                     if (hFindDlg != NULL)
                     {
                         ShowWindow(hFindDlg, SW_SHOW);
@@ -2262,12 +2238,12 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 }
 
 //
-//  ФУНКЦИЯ: FindDlgProc(HWND, UINT, WPARAM, LPARAM)
+//  FUNCTION: FindDlgProc(HWND, UINT, WPARAM, LPARAM)
 //  
-//  ЦЕЛЬ: Управляет потоком поиска ключей и значений в реестре Windows.
+//  PURPOSE: Processes messages for the find threaded dialog.
 //
-//  WM_INITDIALOG - инициализирование диалогового окна.
-//  WM_COMMAND    - обработка команд диалогового окна.
+//  WM_INITDIALOG - dialog box initializer
+//  WM_COMMAND    - dialog box command handler
 //
 INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -2324,12 +2300,12 @@ INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 }
 
 //
-//  ФУНКЦИЯ: EditStringDlgProc(HWND, UINT, WPARAM, LPARAM)
+//  FUNCTION: EditStringDlgProc(HWND, UINT, WPARAM, LPARAM)
 //  
-//  ЦЕЛЬ: Обрабатывает сообщения для диалогового окна изменения строкового значения в реестре Windows.
+//  PURPOSE: Processes messages for the edit string dialog.
 //
-//  WM_INITDIALOG - инициализирование диалогового окна.
-//  WM_COMMAND    - обработка команд диалогового окна.
+//  WM_INITDIALOG - dialog box initializer
+//  WM_COMMAND    - dialog box command handler
 //
 INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -2392,12 +2368,12 @@ INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
 }
 
 //
-//  Функция: EditDwordDlgProc(HWND, UINT, WPARAM, LPARAM)
+//  FUNCTION: EditDwordDlgProc(HWND, UINT, WPARAM, LPARAM)
 //  
-//  ЦЕЛЬ: Обрабатывает сообщения для диалогового окна изменения двоичного значения в реестре Windows.
+//  PURPOSE: Processes messages for the edit dword dialog.
 //
-//  WM_INITDIALOG - инициализирование диалогового окна.
-//  WM_COMMAND    - обработка команд диалогового окна.
+//  WM_INITDIALOG - dialog box initializer
+//  WM_COMMAND    - dialog box command handler
 //
 INT_PTR CALLBACK EditDwordDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -2409,7 +2385,7 @@ INT_PTR CALLBACK EditDwordDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
         case WM_INITDIALOG:
         {
             // Store the key and value name.
-            EDIT_VALUE_DLG_PARAMS* pParams = (EDIT_VALUE_DLG_PARAMS*)lParam;
+            PVALUE_INFO pParams = (PVALUE_INFO)lParam;
             hKey = pParams->hKey;
             wcsncpy_s(szValueName, pParams->szValueName, MAX_VALUE_NAME);
 
@@ -2473,7 +2449,7 @@ INT_PTR CALLBACK EditDwordDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
     return FALSE;
 }
 
-// Обработчик сообщений для окна "О программе".
+// "About program" dialog box handler
 INT_PTR CALLBACK About(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     UNREFERENCED_PARAMETER(lParam);
