@@ -3,9 +3,6 @@
 
 #include "framework.h"
 #include "Regedit.h"
-#include "string"
-#include "Commctrl.h"
-#include "process.h" /* _beginthread, _endthread */
 
 #define MAX_LOADSTRING 100
 #define MAX_ROOT_KEY_LENGTH 20

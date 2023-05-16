@@ -11,5 +11,6 @@
 // Файлы заголовков среды выполнения C
 #include <stdlib.h>
 #include <malloc.h>
-#include <memory.h>
-#include <tchar.h>
+#include <string>
+#include <commctrl.h>
+#include <process.h> /* _beginthread, _endthread */
