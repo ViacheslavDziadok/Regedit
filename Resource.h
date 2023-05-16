@@ -2,6 +2,8 @@
 #define IDC_STATIC (-1)
 #endif
 
+#define MANIFEST								123
+
 #define IDD_ABOUTBOX                            103
 #define IDM_ABOUT                               104
 #define IDM_EXIT                                105

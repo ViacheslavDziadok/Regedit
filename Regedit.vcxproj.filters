@@ -52,4 +52,9 @@
       <Filter>Файлы ресурсов</Filter>
     </Image>
   </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="Regedit.cpl.manifest">
+      <Filter>Файлы ресурсов</Filter>
+    </Manifest>
+  </ItemGroup>
 </Project>

@@ -99,14 +99,14 @@ FONT 8, "Ms Shell Dlg"
 
 
 LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
-IDD_FIND DIALOGEX 0, 0, 186, 65
+IDD_FIND DIALOGEX 0, 0, 186, 45
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Поиск"
 FONT 8, "MS Shell Dlg"
 {
-    DEFPUSHBUTTON   "Отмена", IDCANCEL, 128, 7, 50, 14
-    LTEXT           "Идёт поиск в реестре...", IDC_STATIC, 7, 7, 119, 8, SS_NOPREFIX
-    CONTROL         "", IDC_PROGRESS, "msctls_progress32", WS_BORDER, 7, 22, 171, 14
+    DEFPUSHBUTTON   "Отмена", IDCANCEL, 128, 4, 50, 14
+    LTEXT           "Идёт поиск в реестре...", IDC_STATIC, 7, 7, 119, 10, SS_NOPREFIX
+    CONTROL         "", IDC_PROGRESS, "msctls_progress32", WS_BORDER | PBS_MARQUEE | PBS_SMOOTH, 7, 22, 171, 14
 }
 
 

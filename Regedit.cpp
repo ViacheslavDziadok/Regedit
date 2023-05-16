@@ -22,6 +22,7 @@ HWND hWndLV;
 HWND hWndEV;
 HWND hFindDlg;
 volatile bool bIsSearchCancelled = FALSE;
+UINT g_nMarqueeInterval = 100;                  // The original marquee interval
 
 // Отправить объявления функций, включенных в этот модуль кода:
 ATOM                MyRegisterClass(HINSTANCE);
@@ -79,6 +80,8 @@ CONST DWORD         RenameRegValue(CONST HKEY&, CONST WCHAR*, CONST WCHAR*);
 VOID                DeleteValues(); 
 
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
+// Function to handle the WM_DRAWITEM message for the ListView columns
+LRESULT CALLBACK    ListViewDrawItemProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    SearchDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    FindDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    EditStringDlgProc(HWND, UINT, WPARAM, LPARAM);
@@ -120,7 +123,76 @@ INT APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     return (int) msg.wParam;
 }
 
-VOID ProcessTabKeyDown(MSG& msg, const HWND& hMainWnd)
+//
+//  ФУНКЦИЯ: MyRegisterClass()
+//
+//  ЦЕЛЬ: Регистрирует класс окна.
+//
+ATOM MyRegisterClass(HINSTANCE hInstance)
+{
+    WNDCLASSEXW wcex;
+
+    wcex.cbSize = sizeof(WNDCLASSEX);
+
+    wcex.style          = CS_HREDRAW | CS_VREDRAW;
+    wcex.lpfnWndProc    = WndProc;
+    wcex.cbClsExtra     = 0;
+    wcex.cbWndExtra     = 0;
+    wcex.hInstance      = hInstance;
+    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_REGEDIT));
+    wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
+    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW-2);
+    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_REGEDIT);
+    wcex.lpszClassName  = szWindowClass;
+    wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
+
+    return RegisterClassExW(&wcex);
+}
+
+//
+//   ФУНКЦИЯ: InitInstance(HINSTANCE, int)
+//
+//   ЦЕЛЬ: Сохраняет маркер экземпляра и создает главное окно
+//
+//   КОММЕНТАРИИ:
+//
+//        В этой функции маркер экземпляра сохраняется в глобальной переменной, а также
+//        создается и выводится главное окно программы.
+//
+HWND InitInstance(HINSTANCE hInstance, INT nCmdShow)
+{
+    INITCOMMONCONTROLSEX icex;
+    icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+    icex.dwICC = ICC_STANDARD_CLASSES;
+    InitCommonControlsEx(&icex);
+
+    hInst = hInstance; // Сохранить маркер экземпляра в глобальной переменной
+
+    hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, 0, 1025, 725, nullptr, nullptr, hInstance, nullptr);
+
+    HWND hWndLabelMain = CreateWindowW(L"STATIC", L"Приветствуем в Редакторе Реестра Windows. Для продолжения работы, выберите желаемую функцию и введите требуемые параметры.\r\nВНИМАНИЕ: Программа позволяет редактировать любые незащищённые данные реестра Windows. Соблюдайте осторожность при работе.",
+        WS_VISIBLE | WS_CHILD | WS_BORDER, 0, 0, 1025, 40, hWnd, NULL, hInstance, NULL);
+
+    if (!hWnd)
+    {
+        return FALSE;
+    }
+
+    CreateAddressField();
+    CreateTreeView();
+    CreateListView();
+
+    CreateTreeViewImageList(hInstance);
+
+    ShowWindow(hWnd, nCmdShow);
+    UpdateWindow(hWnd);
+   
+    return hWnd;
+}
+
+// Обработчик нажатия клавиши Tab
+VOID ProcessTabKeyDown(MSG& msg, CONST HWND& hMainWnd)
 {
     // Check if the message is a keyboard input
     if (msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN)
@@ -153,69 +225,6 @@ VOID ProcessTabKeyDown(MSG& msg, const HWND& hMainWnd)
         }
         }
     }
-}
-
-//
-//  ФУНКЦИЯ: MyRegisterClass()
-//
-//  ЦЕЛЬ: Регистрирует класс окна.
-//
-ATOM MyRegisterClass(HINSTANCE hInstance)
-{
-    WNDCLASSEXW wcex;
-
-    wcex.cbSize = sizeof(WNDCLASSEX);
-
-    wcex.style          = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc    = WndProc;
-    wcex.cbClsExtra     = 0;
-    wcex.cbWndExtra     = 0;
-    wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_REGEDIT));
-    wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
-    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_REGEDIT);
-    wcex.lpszClassName  = szWindowClass;
-    wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
-
-    return RegisterClassExW(&wcex);
-}
-
-//
-//   ФУНКЦИЯ: InitInstance(HINSTANCE, int)
-//
-//   ЦЕЛЬ: Сохраняет маркер экземпляра и создает главное окно
-//
-//   КОММЕНТАРИИ:
-//
-//        В этой функции маркер экземпляра сохраняется в глобальной переменной, а также
-//        создается и выводится главное окно программы.
-//
-HWND InitInstance(HINSTANCE hInstance, INT nCmdShow)
-{
-   hInst = hInstance; // Сохранить маркер экземпляра в глобальной переменной
-
-   hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, 1025, 725, nullptr, nullptr, hInstance, nullptr);
-
-   HWND hWndLabelMain = CreateWindowW(L"STATIC", L"Приветствуем в Редакторе Реестра Windows. Для продолжения работы, выберите желаемую функцию и введите требуемые параметры.\r\nВНИМАНИЕ: Программа позволяет редактировать любые незащищённые данные реестра Windows. Соблюдайте осторожность при работе.",
-       WS_VISIBLE | WS_CHILD | WS_BORDER, 25, 30, 950, 40, hWnd, NULL, hInstance, NULL);
-
-   if (!hWnd)
-   {
-      return FALSE;
-   }
-
-   CreateAddressField();
-   CreateTreeView();
-   CreateListView();
-
-   CreateTreeViewImageList(hInstance);
-
-   ShowWindow(hWnd, nCmdShow);
-   UpdateWindow(hWnd);
-   
-   return hWnd;
 }
 
 
@@ -259,6 +268,7 @@ typedef struct _TREE_NODE_DATA
 
 
 
+// Функция потока поиска в реестре
 VOID __cdecl FindThreadFunc(void* pArguments)
 {
     PSEARCH_DATA pSearchData = (PSEARCH_DATA)pArguments;
@@ -459,7 +469,7 @@ VOID CreateAddressField()
     // Create an Edit Control
     hWndEV = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
-        25, 80, 950, 25,
+        0, 45, 1025, 20,
         hWnd, (HMENU)IDC_MAIN_EDIT, GetModuleHandle(NULL), NULL);
 
     HFONT hfDefault;
@@ -473,7 +483,7 @@ VOID CreateTreeView()
     // Create the TreeView control
     hWndTV = CreateWindowEx(0, WC_TREEVIEW, NULL,
         WS_VISIBLE | WS_CHILD | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_HASLINES | WS_BORDER | TVS_EDITLABELS,
-        25, 120, 300, 520,
+        0, 70, 320, 665,
         hWnd, (HMENU)IDC_TREEVIEW, GetModuleHandle(NULL), NULL);
 
     CreateRootKeys();
@@ -555,7 +565,7 @@ VOID CreateListView()
     // Create the ListView control
     hWndLV = CreateWindowExW(0, WC_LISTVIEW, NULL,
         WS_CHILD | WS_VISIBLE | LVS_REPORT | WS_BORDER | LVS_EDITLABELS,
-        350, 120, 625, 520,
+        325, 70, 685, 665,
         hWnd, (HMENU)IDC_LISTVIEW, GetModuleHandle(NULL), NULL);
 
     // Add columns.
@@ -574,7 +584,7 @@ VOID CreateListView()
 
     lvc.iSubItem = 2;
     lvc.pszText = (LPWSTR)L"Данные";
-    lvc.cx = 275;
+    lvc.cx = 335;
     ListView_InsertColumn(hWndLV, 2, &lvc);
 }
 
@@ -848,6 +858,7 @@ VOID SetValue(CONST HKEY& key, LPCWSTR valueName, DWORD type, CONST BYTE* data, 
         MessageBoxW(hWnd, L"Failed to set value.", L"Error", MB_OK | MB_ICONERROR);
     }
 }
+
 
 
 // Функция вызова диалогового окна поиска ключей и значений
@@ -2148,6 +2159,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             PostQuitMessage(0);
             break;
         }
+        case WM_GETMINMAXINFO:
+        {
+            MINMAXINFO* pMinMaxInfo = reinterpret_cast<MINMAXINFO*>(lParam);
+            pMinMaxInfo->ptMinTrackSize.x = pMinMaxInfo->ptMaxTrackSize.x = 1025;
+            pMinMaxInfo->ptMinTrackSize.y = pMinMaxInfo->ptMaxTrackSize.y = 725;
+        }
+        break;
         default:
             return DefWindowProc(hWnd, uMsg, wParam, lParam);
         }
@@ -2263,28 +2281,50 @@ INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
         case WM_INITDIALOG:
         {
+            // Set the marquee mode and animation speed of the progress bar
+            SendDlgItemMessageW(hDlg, IDC_PROGRESS, PBM_SETMARQUEE, TRUE, 0);
+
+            // Start the timer to update the progress bar
+            SetTimer(hDlg, 1, 100, NULL);
+
             return TRUE;
         }
-    case WM_COMMAND:
-        switch (LOWORD(wParam))
+        case WM_TIMER:
         {
-            case IDCANCEL:
+            // Update the progress bar position
+            LRESULT newPos = SendDlgItemMessageW(hDlg, IDC_PROGRESS, PBM_GETPOS, 0, 0) + 1;
+            if (newPos == 100)
             {
-                bIsSearchCancelled = true;  // set the cancellation flag
-                DestroyWindow(hDlg);
-                hDlg = NULL;
-                break;
-            }
+				newPos = 0;
+			}
+            SendDlgItemMessageW(hDlg, IDC_PROGRESS, PBM_SETPOS, newPos, 0);
+
+            break;
         }
-        break;
-    case WM_DESTROY:
-    {
-        DestroyWindow(hDlg);
-		hDlg = NULL;
-		break;
-	}
-    default:
-        return FALSE;
+        case WM_COMMAND:
+        {
+            switch (LOWORD(wParam))
+            {
+                case IDCANCEL:
+                {
+                    bIsSearchCancelled = true;  // set the cancellation flag
+                    DestroyWindow(hDlg);
+                    hDlg = NULL;
+                    break;
+                }
+            }
+            break;
+        }
+        case WM_DESTROY:
+        {
+            // Stop the timer
+            KillTimer(hDlg, 1);
+            DestroyWindow(hDlg);
+            hDlg = NULL;
+            break;
+        }
+        default:
+            return FALSE;
     }
     return TRUE;
 }
