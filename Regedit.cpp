@@ -22,7 +22,6 @@ HWND hWndLV;
 HWND hWndEV;
 HWND hFindDlg;
 volatile bool bIsSearchCancelled = FALSE;
-UINT g_nMarqueeInterval = 100;                  // The original marquee interval
 
 // Отправить объявления функций, включенных в этот модуль кода:
 ATOM                MyRegisterClass(HINSTANCE);
