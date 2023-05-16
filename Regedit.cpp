@@ -76,8 +76,6 @@ CONST DWORD         RenameRegValue(CONST HKEY&, CONST WCHAR*, CONST WCHAR*);
 VOID                DeleteValues(); 
 
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
-// Function to handle the WM_DRAWITEM message for the ListView columns
-LRESULT CALLBACK    ListViewDrawItemProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    SearchDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    FindDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    EditStringDlgProc(HWND, UINT, WPARAM, LPARAM);
