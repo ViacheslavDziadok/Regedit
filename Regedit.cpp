@@ -1783,7 +1783,7 @@ VOID ModifyValue()
             wcscpy_s(valueInfo->szValueName, szValueName);
             valueInfo->dwType = dwType;
 
-            if (dwType == REG_SZ)
+            if (dwType == REG_SZ || dwType == REG_EXPAND_SZ)
             {
                 DialogBoxParamW(hInst, MAKEINTRESOURCE(IDD_EDIT_STRING), hWnd, EditStringDlgProc, (LPARAM)valueInfo);
             }
