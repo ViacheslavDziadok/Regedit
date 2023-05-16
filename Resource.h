@@ -26,6 +26,8 @@
 #define IDM_SEARCH_NAME							401
 #define IDM_SEARCH_KEYS							402
 #define IDM_SEARCH_VALUES						403
+#define IDD_FIND								500
+#define IDC_PROGRESS							501
 #define IDM_KEY_EXPAND_COLLAPSE                 801
 #define IDM_NEW_KEY		                        802
 #define IDM_DELETE_KEY                          804

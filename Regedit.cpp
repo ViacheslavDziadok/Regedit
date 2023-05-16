@@ -4,7 +4,8 @@
 #include "framework.h"
 #include "Regedit.h"
 #include "string"
-#include <Commctrl.h>
+#include "Commctrl.h"
+#include "process.h" /* _beginthread, _endthread */
 
 #define MAX_LOADSTRING 100
 #define MAX_ROOT_KEY_LENGTH 20
@@ -15,9 +16,12 @@
 HINSTANCE hInst;                                // текущий экземпляр
 WCHAR szTitle[MAX_LOADSTRING];                  // Текст строки заголовка
 WCHAR szWindowClass[MAX_LOADSTRING];            // имя класса главного окна
+HWND hWnd;
 HWND hWndTV;
 HWND hWndLV;
 HWND hWndEV;
+HWND hFindDlg;
+volatile bool bIsSearchCancelled = FALSE;
 
 // Отправить объявления функций, включенных в этот модуль кода:
 ATOM                MyRegisterClass(HINSTANCE);
@@ -75,6 +79,7 @@ VOID                DeleteValues(HWND);
 
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    SearchDlgProc(HWND, UINT, WPARAM, LPARAM);
+INT_PTR CALLBACK    FindDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    EditStringDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    EditDwordDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
@@ -189,7 +194,7 @@ HWND InitInstance(HINSTANCE hInstance, INT nCmdShow)
 {
    hInst = hInstance; // Сохранить маркер экземпляра в глобальной переменной
 
-   HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
+   hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
       CW_USEDEFAULT, 0, 1025, 725, nullptr, nullptr, hInstance, nullptr);
 
    HWND hWndLabelMain = CreateWindowW(L"STATIC", L"Приветствуем в Редакторе Реестра Windows. Для продолжения работы, выберите желаемую функцию и введите требуемые параметры.\r\nВНИМАНИЕ: Программа позволяет редактировать любые незащищённые данные реестра Windows. Соблюдайте осторожность при работе.",
@@ -208,7 +213,7 @@ HWND InitInstance(HINSTANCE hInstance, INT nCmdShow)
    ImageList_AddIcon(hImageList, hIcon);
    ImageList_AddIcon(hImageList, hIconOpen);
    ImageList_AddIcon(hImageList, hIconClosed);
-   SendMessage(hWndTV, TVM_SETIMAGELIST, TVSIL_NORMAL, (LPARAM)hImageList);
+   SendMessageW(hWndTV, TVM_SETIMAGELIST, TVSIL_NORMAL, (LPARAM)hImageList);
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
@@ -217,6 +222,13 @@ HWND InitInstance(HINSTANCE hInstance, INT nCmdShow)
 }
 
 
+
+typedef struct SearchData
+{
+    WCHAR szSearchTerm[MAX_VALUE_NAME];
+    BOOL bSearchKeys;
+    BOOL bSearchValues;
+};
 
 // Структура для передачи параметров пути в ячейку дерева (ключ)
 typedef struct _TREE_NODE_INFO
@@ -247,6 +259,82 @@ typedef struct _TREE_NODE_DATA
     INT  iSubItem;
     BOOL bSortAscending;
 } TREE_NODE_DATA, * PTREE_NODE_DATA;
+
+
+
+VOID __cdecl FindThreadFunc(void* pArguments)
+{
+    SearchData* pSearchData = (SearchData*)pArguments;
+
+    while (true)
+    {
+        // Get the key path from the edit control.
+        WCHAR* szFullPath = new WCHAR[MAX_PATH];
+        GetWindowTextW(hWndEV, szFullPath, MAX_PATH);
+
+        WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
+        WCHAR szSubKeyPath[MAX_PATH] = L"";
+
+        // This is your existing function that separates the full path into the root key and the subkey path
+        SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
+
+        // Get the root key from the root key name
+        HKEY hRootKey = GetHKEYFromString(szRootKeyName);
+
+        LPWSTR pszFoundPath = SearchRegistry(hRootKey, szSubKeyPath, pSearchData->szSearchTerm, pSearchData->bSearchKeys, pSearchData->bSearchValues);
+        if (pszFoundPath != NULL)
+        {
+            if (lstrcmp(szFullPath, szRootKeyName) == 0)
+            {
+                wcscat_s(szFullPath, MAX_PATH, L"\\");
+                wcscat_s(szFullPath, MAX_PATH, pszFoundPath);
+            }
+            else
+            {
+                wcscpy_s(szFullPath, MAX_PATH, L"");
+                wcscat_s(szFullPath, MAX_PATH, szRootKeyName);
+                wcscat_s(szFullPath, MAX_PATH, L"\\");
+                wcscat_s(szFullPath, MAX_PATH, pszFoundPath);
+            }
+            ExpandTreeViewToPath(szFullPath);
+
+            // Don't forget to free the memory allocated by SearchRegistry!
+            delete[] pszFoundPath;
+            delete[] szFullPath;
+
+            return;
+        }
+        else if (pszFoundPath == NULL && !bIsSearchCancelled)
+        {
+            // Don't forget to free the memory allocated by SearchRegistry!
+            delete[] pszFoundPath;
+            delete[] szFullPath;
+
+            LPWSTR szMessage = new WCHAR[MAX_PATH];
+            wcscpy_s(szMessage, MAX_PATH, L"Элемент \"");
+            wcscat_s(szMessage, MAX_PATH, pSearchData->szSearchTerm);
+            wcscat_s(szMessage, MAX_PATH, L"\" в процессе поиска в \"");
+            wcscat_s(szMessage, MAX_PATH, szRootKeyName);
+            wcscat_s(szMessage, MAX_PATH, L"\" не найден.");
+            MessageBoxW(hWnd, szMessage, L"Элемент не найден", MB_OK);
+
+            return;
+        }
+        else
+        {
+            // Don't forget to free the memory allocated by SearchRegistry!
+            delete[] pszFoundPath;
+            delete[] szFullPath;
+            return;
+        }
+        // Check isSearchCancelled periodically to see if you should stop the search.
+    }
+
+    // Clean up and close the "search ongoing" dialog when done
+    SendMessage(hFindDlg, WM_CLOSE, 0, 0);
+
+    free(pSearchData);
+}
 
 
 
@@ -903,29 +991,30 @@ LPWSTR SearchRegistry(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wst
 {
     // First, perform the usual recursive search in the selected key
     LPWSTR pszFoundPath = SearchRegistryRecursive(hKeyRoot, keyPath, searchTerm, bSearchKeys, bSearchValues);
-    if (pszFoundPath != nullptr) {
+    
+    if (pszFoundPath != nullptr)
+    {
         return pszFoundPath;
     }
-
-    // If the search did not find anything and there is no parent key path, move to the root key
-    if (keyPath.empty()) {
-        // Get the root key name from the hKeyRoot value
-        std::wstring rootKeyPath = GetStringFromHKEY(hKeyRoot);
-
-        // Continue the search from the root key
-        return SearchRegistry(hKeyRoot, rootKeyPath, searchTerm, bSearchKeys, bSearchValues);
+    else if (bIsSearchCancelled) 
+    {
+        return nullptr;
     }
 
-    else {
+    if (!keyPath.empty())
+    {
         // If the search did not find anything and there is a parent key path, move to the parent key
         std::wstring parentKeyPath = GetParentKeyPath(keyPath);
 
         // Continue the search from the parent key
-        pszFoundPath = SearchRegistryRecursive(hKeyRoot, parentKeyPath, searchTerm, bSearchKeys, bSearchValues);
-        if (pszFoundPath != nullptr) {
+        pszFoundPath = SearchRegistry(hKeyRoot, parentKeyPath, searchTerm, bSearchKeys, bSearchValues);
+        if (pszFoundPath != nullptr)
+        {
             return pszFoundPath;
         }
     }
+
+    PostMessageW(hFindDlg, WM_DESTROY, 0, 0);
 
     // No match found
     return nullptr;
@@ -934,6 +1023,10 @@ LPWSTR SearchRegistry(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wst
 // Функция рекурсивного поиска в реестре, возвращает путь к найденному ключу или значение, алгоритм DFS
 LPWSTR SearchRegistryRecursive(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wstring& searchTerm, BOOL bSearchKeys, BOOL bSearchValues)
 {
+    if (bIsSearchCancelled) {
+		return nullptr;
+	}
+
     HKEY hKey;
 
     if (RegOpenKeyExW(hKeyRoot, keyPath.c_str(), 0, KEY_READ, &hKey) != ERROR_SUCCESS)
@@ -965,6 +1058,8 @@ LPWSTR SearchRegistryRecursive(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST
 
                 // Close the opened key
                 RegCloseKey(hKey);
+
+                PostMessageW(hFindDlg, WM_DESTROY, 0, 0);
 
                 return _wcsdup(keyPath.c_str());
             }
@@ -1002,6 +1097,8 @@ LPWSTR SearchRegistryRecursive(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST
                 // Close the opened key
                 RegCloseKey(hKey);
 
+                PostMessageW(hFindDlg, WM_DESTROY, 0, 0);
+
                 return _wcsdup(fullPath.c_str());
             }
 
@@ -1020,27 +1117,31 @@ LPWSTR SearchRegistryRecursive(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST
     while (RegEnumKeyExW(hKey, dwIndex, szKeyName, &dwKeyNameSize, NULL, NULL, NULL, NULL) == ERROR_SUCCESS)
     {
         std::wstring subkeyPath;
-        if (keyPath.empty()) {
+        if (keyPath.empty()) 
+        {
             subkeyPath = szKeyName;
         }
-        else {
+        else 
+        {
             subkeyPath = keyPath + L"\\" + szKeyName;
         }
         LPWSTR pszFoundPath = SearchRegistryRecursive(hKeyRoot, subkeyPath, searchTerm, bSearchKeys, bSearchValues);
-        if (pszFoundPath != nullptr)
-        {
-            // Found the search term in the subkey, return the path
-            delete[] szKeyName;
+            if (pszFoundPath != nullptr)
+            {
+                // Found the search term in the subkey, return the path
+                delete[] szKeyName;
 
-            // Close the opened key
-            RegCloseKey(hKey);
+                // Close the opened key
+                RegCloseKey(hKey);
 
-            return pszFoundPath;
-        }
+                PostMessageW(hFindDlg, WM_DESTROY, 0, 0);
 
-        // Increment the index
-        dwIndex++;
-        dwKeyNameSize = MAX_KEY_LENGTH;
+                return pszFoundPath;
+            }
+
+            // Increment the index
+            dwIndex++;
+            dwKeyNameSize = MAX_KEY_LENGTH;
     }
     delete[] szKeyName;
 
@@ -1824,9 +1925,9 @@ VOID DeleteValues(HWND hWnd)
 //  WM_PAINT       - отрисовка главного окна
 //  WM_DESTROY     - отправка сообщения о выходе и очистка памятиЦ
 //
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    switch (message)
+    switch (uMsg)
     {
         case WM_CREATE:
         {
@@ -1998,7 +2099,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     DestroyWindow(hWnd);
                 break;
                 default:
-                    return DefWindowProc(hWnd, message, wParam, lParam);
+                    return DefWindowProc(hWnd, uMsg, wParam, lParam);
             }
             break;
         }
@@ -2043,7 +2144,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         }
         default:
-            return DefWindowProc(hWnd, message, wParam, lParam);
+            return DefWindowProc(hWnd, uMsg, wParam, lParam);
         }
     return FALSE;
 }
@@ -2085,79 +2186,50 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
                 }
                 case IDOK:
                 {
+                    SearchData* pSearchData = (SearchData*)malloc(sizeof(SearchData));
+                    if (pSearchData == NULL)
+                    {
+                        MessageBoxW(hDlg, L"Failed to allocate memory", L"Error", MB_OK | MB_ICONERROR);
+                        return TRUE;
+					}
                     WCHAR szSearchTerm[MAX_PATH];
                     BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDM_SEARCH_KEYS);
                     BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDM_SEARCH_VALUES);
 
-                    int length = GetDlgItemTextW(hDlg, IDM_SEARCH_NAME, szSearchTerm, MAX_PATH);
+                    GetDlgItemTextW(hDlg, IDM_SEARCH_NAME, szSearchTerm, MAX_PATH);
 
-                    // Get the key path from the edit control.
-                    WCHAR* szFullPath = new WCHAR[MAX_PATH];
-                    GetWindowTextW(hWndEV, szFullPath, MAX_PATH);
+                    wcscpy_s(pSearchData->szSearchTerm, szSearchTerm);
+                    pSearchData->bSearchKeys = bSearchKeys;
+                    pSearchData->bSearchValues = bSearchValues;
 
-                    WCHAR szRootKeyName[MAX_ROOT_KEY_LENGTH];
-                    WCHAR szSubKeyPath[MAX_PATH] = L"";
+                    bIsSearchCancelled = false;
 
-                    // This is your existing function that separates the full path into the root key and the subkey path
-                    SeparateFullPath(szFullPath, szRootKeyName, szSubKeyPath);
+                    EndDialog(hDlg, LOWORD(wParam));
 
-                    // Get the root key from the root key name
-                    HKEY hRootKey = GetHKEYFromString(szRootKeyName);
-
-                    LPWSTR pszFoundPath = SearchRegistry(hRootKey, szSubKeyPath, szSearchTerm, bSearchKeys, bSearchValues);
-                    if (pszFoundPath != NULL)
+                    hFindDlg = CreateDialogW(hInst, MAKEINTRESOURCE(IDD_FIND), hWnd, FindDlgProc);
+                    if (hFindDlg != NULL)
                     {
-                        if (lstrcmp(szFullPath, szRootKeyName) == 0)
-                        {
-                            wcscat_s(szFullPath, MAX_PATH, L"\\");
-                            wcscat_s(szFullPath, MAX_PATH, pszFoundPath);
-                        }
-                        else 
-                        {
-                            wcscpy_s(szFullPath, MAX_PATH, L"");
-                            wcscat_s(szFullPath, MAX_PATH, szRootKeyName);
-                            wcscat_s(szFullPath, MAX_PATH, L"\\");
-        				    wcscat_s(szFullPath, MAX_PATH, pszFoundPath);
-                        }
-                        ExpandTreeViewToPath(szFullPath);
+                        ShowWindow(hFindDlg, SW_SHOW);
+                    }
 
-                        // Don't forget to free the memory allocated by SearchRegistry!
-                        delete[] pszFoundPath;
-                        delete[] szFullPath;
+                    HANDLE hThread = (HANDLE)_beginthread(FindThreadFunc, 0, pSearchData);
+                    if (hThread == NULL)
+                    {
+						MessageBoxW(hDlg, L"Failed to create a thread", L"Error", MB_OK | MB_ICONERROR);
+						return TRUE;
+					}
 
-                        EndDialog(hDlg, LOWORD(wParam));
-
-                        if (bSearchKeys)
-                        {
-							// Select the found key in the treeview
-                            SetFocus(hWndTV);
-						}
-                        else
-                        {
-							// Select the found value in the listview
-                            SetFocus(hWndLV);
-						}
-
-                        return TRUE;
+                    if (bSearchKeys)
+                    {
+                        // Select the found key in the treeview
+                        SetFocus(hWndTV);
                     }
                     else
                     {
-                        // Don't forget to free the memory allocated by SearchRegistry!
-                        delete[] pszFoundPath;
-                        delete[] szFullPath;
-
-                        LPWSTR szMessage = new WCHAR[MAX_PATH];
-                        wcscpy_s(szMessage, MAX_PATH, L"Элемент \"");
-                        wcscat_s(szMessage, MAX_PATH, szSearchTerm);
-                        wcscat_s(szMessage, MAX_PATH, L"\" в процессе поиска в \"");
-                        wcscat_s(szMessage, MAX_PATH, szRootKeyName);
-                        wcscat_s(szMessage, MAX_PATH, L"\" не найден.");
-                        MessageBoxW(hDlg, szMessage, L"Элемент не найден", MB_OK);
-
-                        return FALSE;
+                        // Select the found value in the listview
+                        SetFocus(hWndLV);
                     }
 
-                    EndDialog(hDlg, LOWORD(wParam));
                     return TRUE;
 
                 }
@@ -2173,6 +2245,46 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 }
 
 //
+//  ФУНКЦИЯ: FindDlgProc(HWND, UINT, WPARAM, LPARAM)
+//  
+//  ЦЕЛЬ: Управляет потоком поиска ключей и значений в реестре Windows.
+//
+//  WM_INITDIALOG - инициализирование диалогового окна.
+//  WM_COMMAND    - обработка команд диалогового окна.
+//
+INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+    switch (uMsg)
+    {
+        case WM_INITDIALOG:
+        {
+            return TRUE;
+        }
+    case WM_COMMAND:
+        switch (LOWORD(wParam))
+        {
+            case IDCANCEL:
+            {
+                bIsSearchCancelled = true;  // set the cancellation flag
+                DestroyWindow(hDlg);
+                hDlg = NULL;
+                break;
+            }
+        }
+        break;
+    case WM_DESTROY:
+    {
+        DestroyWindow(hDlg);
+		hDlg = NULL;
+		break;
+	}
+    default:
+        return FALSE;
+    }
+    return TRUE;
+}
+
+//
 //  ФУНКЦИЯ: EditStringDlgProc(HWND, UINT, WPARAM, LPARAM)
 //  
 //  ЦЕЛЬ: Обрабатывает сообщения для диалогового окна изменения строкового значения в реестре Windows.
@@ -2180,11 +2292,11 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 //  WM_INITDIALOG - инициализирование диалогового окна.
 //  WM_COMMAND    - обработка команд диалогового окна.
 //
-INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     static VALUE_INFO* pValueInfo;
 
-    switch (message)
+    switch (uMsg)
     {
         case WM_INITDIALOG:
         {
@@ -2323,10 +2435,10 @@ INT_PTR CALLBACK EditDwordDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
 }
 
 // Обработчик сообщений для окна "О программе".
-INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK About(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     UNREFERENCED_PARAMETER(lParam);
-    switch (message)
+    switch (uMsg)
     {
     case WM_INITDIALOG:
         return TRUE;
