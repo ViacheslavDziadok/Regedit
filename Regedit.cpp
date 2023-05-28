@@ -26,41 +26,39 @@ HWND                InitInstance(HINSTANCE, INT);
 
 VOID                ProcessTabKeyDown(MSG&, CONST HWND&);
 
-CONST WCHAR*        GetStringFromHKEY(CONST HKEY&);
-CONST HKEY          GetHKEYFromString(CONST std::wstring&);
-CONST WCHAR*        RegTypeToString(CONST DWORD);
-CONST WCHAR*        RegDataToString(CONST DWORD, CONST BYTE*, CONST DWORD);
-VOID                SeparateFullPath(WCHAR[MAX_PATH], WCHAR[MAX_PATH], WCHAR[MAX_PATH]);
+VOID __cdecl        FindThreadFunc(VOID*);
 
-VOID                CreateTestKeysAndValues();
+CONST WCHAR* GetStringFromHKEY(CONST HKEY&);
+CONST HKEY          GetHKEYFromString(CONST std::wstring&);
+CONST WCHAR* RegTypeToString(CONST DWORD);
+CONST WCHAR* RegDataToString(CONST DWORD, CONST BYTE*, CONST DWORD);
+VOID                SeparateFullPath(WCHAR[MAX_PATH], WCHAR[MAX_PATH], WCHAR[MAX_PATH]);
+std::wstring        GetParentKeyPath(CONST std::wstring&);
+UINT                CompareValueNamesEx(LPARAM, LPARAM, LPARAM);
+
 VOID                CreateAddressField();
 VOID                CreateTreeView();
-VOID                CreateTreeViewImageList(CONST HINSTANCE& hInstance);
+VOID                CreateTreeViewImageList();
 VOID                CreateRootKeys();
 VOID                CreateListView();
+VOID                CreateTestKeysAndValues();
 
-VOID                ExpandKey(CONST LPARAM&);
-VOID                ShowKeyValues(CONST LPARAM&);
-VOID                DeleteTreeItemsRecursively(HTREEITEM);
-UINT                CompareValueNamesEx(LPARAM, LPARAM, LPARAM);
-VOID				CreateOrOpenKey(CONST HKEY&, LPCWSTR, HKEY&);
-VOID				SetValue(CONST HKEY&, LPCWSTR, DWORD, CONST BYTE*, DWORD);
+VOID                ShowValues(CONST LPARAM&);
+VOID                ExpandTreeViewToPath(CONST WCHAR*);
+VOID                PopulateListView(CONST HKEY&);
+VOID                UpdateTreeView();
+VOID                UpdateListView();
+VOID                SelectClickedKey();
 
 INT_PTR             OnSearch();
+INT_PTR             OnKeyExpand(CONST LPARAM&);
 INT_PTR             OnColumnClickEx(CONST LPARAM&);
 INT_PTR				OnEndLabelEditKeyEx(CONST LPARAM&);
 INT_PTR				OnEndLabelEditValueEx(CONST LPARAM&);
 
 LPWSTR			    SearchRegistry(HKEY, CONST std::wstring&, CONST std::wstring&, CONST BOOL, CONST BOOL);
 LPWSTR			    SearchRegistryRecursive(HKEY, CONST std::wstring&, CONST std::wstring&, CONST BOOL, CONST BOOL);
-std::wstring        GetParentKeyPath(CONST std::wstring&);
-VOID                ExpandTreeViewToPath(CONST WCHAR*);
 
-VOID                PopulateListView(CONST HKEY&);
-VOID                UpdateTreeView();
-VOID                UpdateListView();
-
-VOID                SelectClickedKey();
 VOID                ShowKeyMenu();
 VOID                AddMenuOption(HMENU, LPCWSTR, UINT, UINT);
 VOID                ShowNewValueMenu();
@@ -73,7 +71,8 @@ VOID                CreateValue(CONST DWORD);
 VOID                ModifyValue();
 VOID                RenameValue();
 CONST DWORD         RenameRegValue(CONST HKEY&, CONST WCHAR*, CONST WCHAR*);
-VOID                DeleteValues(); 
+VOID                DeleteValues();
+VOID                DeleteTreeItemsRecursively(HTREEITEM);
 
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    SearchDlgProc(HWND, UINT, WPARAM, LPARAM);
@@ -163,10 +162,10 @@ HWND InitInstance(HINSTANCE hInstance, INT nCmdShow)
     hInst = hInstance; // Сохранить маркер экземпляра в глобальной переменной
 
     hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, 0, 1025, 725, nullptr, nullptr, hInstance, nullptr);
+        CW_USEDEFAULT, 0, 1025, 725, nullptr, nullptr, hInst, nullptr);
 
     HWND hWndLabelMain = CreateWindowW(L"STATIC", L"Приветствуем в Редакторе Реестра Windows. Для продолжения работы, выберите желаемую функцию и введите требуемые параметры.\r\nВНИМАНИЕ: Программа позволяет редактировать любые незащищённые данные реестра Windows. Соблюдайте осторожность при работе.",
-        WS_VISIBLE | WS_CHILD | WS_BORDER, 0, 0, 1025, 40, hWnd, NULL, hInstance, NULL);
+        WS_VISIBLE | WS_CHILD | WS_BORDER, 0, 0, 1025, 40, hWnd, NULL, hInst, NULL);
 
     if (!hWnd)
     {
@@ -177,7 +176,7 @@ HWND InitInstance(HINSTANCE hInstance, INT nCmdShow)
     CreateTreeView();
     CreateListView();
 
-    CreateTreeViewImageList(hInstance);
+    CreateTreeViewImageList();
 
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
@@ -484,13 +483,13 @@ VOID CreateTreeView()
 }
 
 // Функция создаёт список изображений для дерева реестра
-VOID CreateTreeViewImageList(CONST HINSTANCE& hInstance)
+VOID CreateTreeViewImageList()
 {
     // Set image list for treeview control
     HIMAGELIST hImageList = ImageList_Create(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), ILC_COLOR32 | ILC_MASK, 3, 3);
-    HICON hIcon = LoadIcon(hInstance, IDI_WINLOGO);
-    HICON hIconOpen = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_OPENED_FOLDER));
-    HICON hIconClosed = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_CLOSED_FOLDER));
+    HICON hIcon = LoadIcon(hInst, IDI_WINLOGO);
+    HICON hIconOpen = LoadIcon(hInst, MAKEINTRESOURCE(IDI_OPENED_FOLDER));
+    HICON hIconClosed = LoadIcon(hInst, MAKEINTRESOURCE(IDI_CLOSED_FOLDER));
     ImageList_AddIcon(hImageList, hIcon);
     ImageList_AddIcon(hImageList, hIconOpen);
     ImageList_AddIcon(hImageList, hIconClosed);
@@ -586,48 +585,49 @@ VOID CreateListView()
 VOID CreateTestKeysAndValues()
 {
     HKEY hKeyRoot;
-    CreateOrOpenKey(HKEY_CURRENT_USER, L"Software\\1test_key", hKeyRoot);
+    DWORD dwDisposition;
+    RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\1test_key", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyRoot, &dwDisposition);
 
     std::wstring szValueData = L"test_sz_string_value";
-    SetValue(hKeyRoot, L"sz_val", REG_SZ, reinterpret_cast<const BYTE*>(szValueData.c_str()), MAX_VALUE_NAME);
+    RegSetValueExW(hKeyRoot, L"sz_val", 0, REG_SZ, reinterpret_cast<const BYTE*>(szValueData.c_str()), MAX_VALUE_NAME);
 
     DWORD dwValueData = 12345;
-    SetValue(hKeyRoot, L"dw_val", REG_DWORD, reinterpret_cast<const BYTE*>(&dwValueData), sizeof(DWORD));
+    RegSetValueExW(hKeyRoot, L"dw_val", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&dwValueData), sizeof(DWORD));
 
     for (int i = 0; i < 10; i++)
     {
         HKEY hKeyOuter;
         std::wstring subKeyName = L"key " + std::to_wstring(i);
-        CreateOrOpenKey(hKeyRoot, subKeyName.c_str(), hKeyOuter);
+        RegCreateKeyExW(hKeyRoot, subKeyName.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyOuter, &dwDisposition);
         RegCloseKey(hKeyOuter);
     }
 
     HKEY hKeyInnerStruct;
-    CreateOrOpenKey(hKeyRoot, L"key 0\\skey 0", hKeyInnerStruct);
+    RegCreateKeyExW(hKeyRoot, L"key 0\\skey 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInnerStruct, &dwDisposition);
     RegCloseKey(hKeyInnerStruct);
 
     HKEY hKeyInner1;
-    CreateOrOpenKey(hKeyRoot, L"key 0", hKeyInner1);
+    RegCreateKeyExW(hKeyRoot, L"key 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner1, &dwDisposition);
     std::wstring szValueDataInner1 = L"inner_1_sz_string_value";
-    SetValue(hKeyInner1, L"test_inner_1", REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner1.c_str()), MAX_VALUE_NAME);
+    RegSetValueExW(hKeyInner1, L"test_inner_1", 0, REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner1.c_str()), MAX_VALUE_NAME);
     RegCloseKey(hKeyInner1);
 
     HKEY hKeyInner2;
-    CreateOrOpenKey(hKeyRoot, L"key 0\\skey 1", hKeyInner2);
+    RegCreateKeyExW(hKeyRoot, L"key 0\\skey 1", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner2, &dwDisposition);
     std::wstring szValueDataInner2 = L"inner_2_sz_string_value";
-    SetValue(hKeyInner2, L"test_inner_2", REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner2.c_str()), MAX_VALUE_NAME);
+    RegSetValueExW(hKeyInner2, L"test_inner_2", 0, REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner2.c_str()), MAX_VALUE_NAME);
     RegCloseKey(hKeyInner2);
 
     HKEY hKeyInner3;
-    CreateOrOpenKey(hKeyRoot, L"key 0\\skey 1\\sskey 0", hKeyInner3);
+    RegCreateKeyExW(hKeyRoot, L"key 0\\skey 1\\sskey 0", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInner3, &dwDisposition);
     std::wstring szValueDataInner3 = L"inner_3_sz_string_value";
-    SetValue(hKeyInner3, L"test_inner_3", REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner3.c_str()), MAX_VALUE_NAME);
+    RegSetValueExW(hKeyInner3, L"test_inner_3", 0, REG_SZ, reinterpret_cast<const BYTE*>(szValueDataInner3.c_str()), MAX_VALUE_NAME);
     RegCloseKey(hKeyInner3);
 
     // Close the opened root key
     RegCloseKey(hKeyRoot);
 
-    MessageBoxW(hWnd, L"Тестовые ключи и значения успешно добавлены.", L"Успех", MB_OK | MB_ICONINFORMATION);
+    MessageBoxW(hWnd, L"Test keys and values are added successfully", L"Success", MB_OK | MB_ICONINFORMATION);
 
     ExpandTreeViewToPath(L"HKEY_CURRENT_USER\\SOFTWARE\\1test_key");
 }
