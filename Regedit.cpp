@@ -2028,7 +2028,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     CreateKey();
 					break;
 				}
-                case IDD_FIND:
+                case IDD_SEARCH:
                 {
                     return OnSearch();
                     break;
