@@ -23,7 +23,7 @@ HWND                InitInstance(HINSTANCE, INT);
 
 VOID                ProcessTabKeyDown(MSG&, CONST HWND&);
 
-VOID __cdecl        FindThreadFunc(VOID*);
+VOID __cdecl        SearchThreadFunc(VOID*);
 
 CONST WCHAR*        GetStringFromHKEY(CONST HKEY&);
 CONST HKEY          GetHKEYFromString(CONST std::wstring&);
@@ -47,7 +47,7 @@ VOID                UpdateTreeView();
 VOID                UpdateListView();
 VOID                SelectClickedKey();
 
-INT_PTR             OnSearch();
+INT_PTR             OnFind();
 INT_PTR             OnKeyExpand(CONST LPARAM&);
 INT_PTR             OnColumnClickEx(CONST LPARAM&);
 INT_PTR				OnEndLabelEditKeyEx(CONST LPARAM&);
@@ -72,8 +72,8 @@ VOID                DeleteValues();
 VOID                DeleteTreeItemsRecursively(HTREEITEM);
 
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
-INT_PTR CALLBACK    SearchDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    FindDlgProc(HWND, UINT, WPARAM, LPARAM);
+INT_PTR CALLBACK    SearchDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    EditStringDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    EditDwordDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
@@ -239,7 +239,7 @@ typedef struct _TREE_NODE_DATA
 
 
 // Threaded search function
-VOID __cdecl FindThreadFunc(void* pArguments)
+VOID __cdecl SearchThreadFunc(void* pArguments)
 {
     PSEARCH_DATA pSearchData = (PSEARCH_DATA)pArguments;
 
@@ -905,9 +905,9 @@ VOID SelectClickedKey()
 // Triggers
 
 // User clicks on the "Search" button
-INT_PTR OnSearch()
+INT_PTR OnFind()
 {
-    return DialogBoxW(GetModuleHandleW(NULL), MAKEINTRESOURCE(IDD_FIND), hWnd, SearchDlgProc);
+    return DialogBoxW(GetModuleHandleW(NULL), MAKEINTRESOURCE(IDD_FIND), hWnd, FindDlgProc);
 }
 
 // User clicks to expand a tree view item
@@ -2028,9 +2028,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     CreateKey();
 					break;
 				}
-                case IDD_SEARCH:
+                case IDD_FIND:
                 {
-                    return OnSearch();
+                    return OnFind();
                     break;
                 }
                 case IDM_DELETE_KEY:
@@ -2150,7 +2150,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 //  WM_INITDIALOG - dialog box initializer
 //  WM_COMMAND    - dialog box command handler
 //
-INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg)
     {
@@ -2199,13 +2199,13 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 
                     EndDialog(hDlg, LOWORD(wParam));
 
-                    hFindDlg = CreateDialogW(hInst, MAKEINTRESOURCE(IDD_SEARCH), hWnd, FindDlgProc);
+                    hFindDlg = CreateDialogW(hInst, MAKEINTRESOURCE(IDD_SEARCH), hWnd, SearchDlgProc);
                     if (hFindDlg != NULL)
                     {
                         ShowWindow(hFindDlg, SW_SHOW);
                     }
 
-                    HANDLE hThread = (HANDLE)_beginthread(FindThreadFunc, 0, pSearchData);
+                    HANDLE hThread = (HANDLE)_beginthread(SearchThreadFunc, 0, pSearchData);
                     if (hThread == NULL)
                     {
 						MessageBoxW(hDlg, L"Failed to create a thread", L"Error", MB_OK | MB_ICONERROR);
@@ -2245,7 +2245,7 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 //  WM_INITDIALOG - dialog box initializer
 //  WM_COMMAND    - dialog box command handler
 //
-INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg)
     {

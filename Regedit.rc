@@ -13,7 +13,7 @@ IDC_REGEDIT MENU
 {
     POPUP "&File"
     {
-        MENUITEM "Find", IDD_SEARCH
+        MENUITEM "Find", IDD_FIND
         MENUITEM "Exit", IDM_EXIT
     }
     POPUP "&Help"
