@@ -26,12 +26,12 @@ HWND                InitInstance(HINSTANCE, INT);
 
 VOID                ProcessTabKeyDown(MSG&, CONST HWND&);
 
-VOID __cdecl        FindThreadFunc(VOID*);
+VOID __cdecl        SearchThreadFunc(VOID*);
 
-CONST WCHAR* GetStringFromHKEY(CONST HKEY&);
+CONST WCHAR*        GetStringFromHKEY(CONST HKEY&);
 CONST HKEY          GetHKEYFromString(CONST std::wstring&);
-CONST WCHAR* RegTypeToString(CONST DWORD);
-CONST WCHAR* RegDataToString(CONST DWORD, CONST BYTE*, CONST DWORD);
+CONST WCHAR*        RegTypeToString(CONST DWORD);
+CONST WCHAR*        RegDataToString(CONST DWORD, CONST BYTE*, CONST DWORD);
 VOID                SeparateFullPath(WCHAR[MAX_PATH], WCHAR[MAX_PATH], WCHAR[MAX_PATH]);
 std::wstring        GetParentKeyPath(CONST std::wstring&);
 UINT                CompareValueNamesEx(LPARAM, LPARAM, LPARAM);
@@ -50,7 +50,7 @@ VOID                UpdateTreeView();
 VOID                UpdateListView();
 VOID                SelectClickedKey();
 
-INT_PTR             OnSearch();
+INT_PTR             OnFind();
 INT_PTR             OnKeyExpand(CONST LPARAM&);
 INT_PTR             OnColumnClickEx(CONST LPARAM&);
 INT_PTR				OnEndLabelEditKeyEx(CONST LPARAM&);
@@ -75,8 +75,8 @@ VOID                DeleteValues();
 VOID                DeleteTreeItemsRecursively(HTREEITEM);
 
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
-INT_PTR CALLBACK    SearchDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    FindDlgProc(HWND, UINT, WPARAM, LPARAM);
+INT_PTR CALLBACK    SearchDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    EditStringDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    EditDwordDlgProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
@@ -262,7 +262,7 @@ typedef struct _TREE_NODE_DATA
 
 
 // Функция потока поиска в реестре
-VOID __cdecl FindThreadFunc(void* pArguments)
+VOID __cdecl SearchThreadFunc(void* pArguments)
 {
     PSEARCH_DATA pSearchData = (PSEARCH_DATA)pArguments;
 
@@ -856,9 +856,9 @@ VOID SetValue(CONST HKEY& key, LPCWSTR valueName, DWORD type, CONST BYTE* data, 
 
 
 // Функция вызова диалогового окна поиска ключей и значений
-INT_PTR OnSearch()
+INT_PTR OnFind()
 {
-    return DialogBoxW(GetModuleHandleW(NULL), MAKEINTRESOURCE(IDD_SEARCH), hWnd, SearchDlgProc);
+    return DialogBoxW(GetModuleHandleW(NULL), MAKEINTRESOURCE(IDD_FIND), hWnd, FindDlgProc);
 }
 
 // Функция сортировки элементов ListView
@@ -1392,7 +1392,7 @@ VOID ShowKeyMenu()
         BOOL bExpanded = TreeView_GetItemState(hWndTV, hSelectedItem, TVIS_EXPANDED) & TVIS_EXPANDED;
         AddMenuOption(hContextMenu, bExpanded ? L"Закрыть" : L"Открыть", IDM_KEY_EXPAND_COLLAPSE, MF_STRING);
         AddMenuOption(hContextMenu, L"Новый ключ", IDM_NEW_KEY, MF_STRING);
-        AddMenuOption(hContextMenu, L"Найти", IDD_SEARCH, MF_STRING);
+        AddMenuOption(hContextMenu, L"Найти", IDD_FIND, MF_STRING);
         AddMenuOption(hContextMenu, L"Удалить", IDM_DELETE_KEY, MF_STRING);
         AddMenuOption(hContextMenu, L"Переименовать", IDM_RENAME_KEY, MF_STRING);
 
@@ -2051,9 +2051,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                     CreateKey();
 					break;
 				}
-                case IDD_SEARCH:
+                case IDD_FIND:
                 {
-                    return OnSearch();
+                    return OnFind();
                     break;
                 }
                 case IDM_DELETE_KEY:
@@ -2174,27 +2174,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 //  WM_INITDIALOG - инициализирование диалогового окна.
 //  WM_COMMAND    - обработка команд диалогового окна.
 //
-INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg)
     {
         case WM_INITDIALOG:
         {
             // Initialize the checkboxes and set them as checked
-            CheckDlgButton(hDlg, IDM_SEARCH_KEYS, BST_CHECKED);
-            CheckDlgButton(hDlg, IDM_SEARCH_VALUES, BST_CHECKED);
+            CheckDlgButton(hDlg, IDM_FIND_KEYS, BST_CHECKED);
+            CheckDlgButton(hDlg, IDM_FIND_VALUES, BST_CHECKED);
             return TRUE;
         }
         case WM_COMMAND:
         {
             switch (LOWORD(wParam))
             {
-                case IDM_SEARCH_KEYS:
-                case IDM_SEARCH_VALUES:
+                case IDM_FIND_KEYS:
+                case IDM_FIND_VALUES:
                 {
                     // Check the state of the checkboxes
-                    BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDM_SEARCH_KEYS);
-                    BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDM_SEARCH_VALUES);
+                    BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDM_FIND_KEYS);
+                    BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDM_FIND_VALUES);
 
                     // Enable/disable the search button based on the checkbox state
                     EnableWindow(GetDlgItem(hDlg, IDOK), bSearchKeys || bSearchValues);
@@ -2210,10 +2210,10 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
                         return TRUE;
 					}
                     WCHAR szSearchTerm[MAX_PATH];
-                    BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDM_SEARCH_KEYS);
-                    BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDM_SEARCH_VALUES);
+                    BOOL bSearchKeys = IsDlgButtonChecked(hDlg, IDM_FIND_KEYS);
+                    BOOL bSearchValues = IsDlgButtonChecked(hDlg, IDM_FIND_VALUES);
 
-                    GetDlgItemTextW(hDlg, IDM_SEARCH_NAME, szSearchTerm, MAX_PATH);
+                    GetDlgItemTextW(hDlg, IDM_FIND_NAME, szSearchTerm, MAX_PATH);
 
                     wcscpy_s(pSearchData->szSearchTerm, szSearchTerm);
                     pSearchData->bSearchKeys = bSearchKeys;
@@ -2223,13 +2223,13 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 
                     EndDialog(hDlg, LOWORD(wParam));
 
-                    hFindDlg = CreateDialogW(hInst, MAKEINTRESOURCE(IDD_FIND), hWnd, FindDlgProc);
+                    hFindDlg = CreateDialogW(hInst, MAKEINTRESOURCE(IDD_SEARCH), hWnd, SearchDlgProc);
                     if (hFindDlg != NULL)
                     {
                         ShowWindow(hFindDlg, SW_SHOW);
                     }
 
-                    HANDLE hThread = (HANDLE)_beginthread(FindThreadFunc, 0, pSearchData);
+                    HANDLE hThread = (HANDLE)_beginthread(SearchThreadFunc, 0, pSearchData);
                     if (hThread == NULL)
                     {
 						MessageBoxW(hDlg, L"Failed to create a thread", L"Error", MB_OK | MB_ICONERROR);
@@ -2269,7 +2269,7 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 //  WM_INITDIALOG - инициализирование диалогового окна.
 //  WM_COMMAND    - обработка команд диалогового окна.
 //
-INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg)
     {

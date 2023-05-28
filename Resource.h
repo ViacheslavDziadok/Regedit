@@ -24,11 +24,11 @@
 #define IDM_EDIT_DWORD_VALUE					303
 #define IDM_EDIT_DWORD_HEXBASE					304
 #define IDM_EDIT_DWORD_DECIMALBASE				305
-#define IDD_SEARCH                              400
-#define IDM_SEARCH_NAME							401
-#define IDM_SEARCH_KEYS							402
-#define IDM_SEARCH_VALUES						403
-#define IDD_FIND								500
+#define IDD_FIND								400
+#define IDM_FIND_NAME							401
+#define IDM_FIND_KEYS							402
+#define IDM_FIND_VALUES							403
+#define IDD_SEARCH								500
 #define IDC_PROGRESS							501
 #define IDM_KEY_EXPAND_COLLAPSE                 801
 #define IDM_NEW_KEY		                        802
