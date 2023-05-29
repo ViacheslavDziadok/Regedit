@@ -868,9 +868,24 @@ VOID ExpandTreeViewToPath(CONST WCHAR* pszPath)
 // Функция обновляет отображаемый ключ реестра в дереве через поле с полным путем
 VOID UpdateTreeView()
 {
-    WCHAR szFullPath[MAX_PATH];
-    GetDlgItemTextW(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
-    ExpandTreeViewToPath(szFullPath);
+    // Retrieve the currently selected item
+    HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
+    if (hSelectedItem)
+    {
+        BOOL isExpanded = TreeView_GetItemState(hWndTV, hSelectedItem, TVIS_EXPANDED) & TVIS_EXPANDED;
+        if (isExpanded)
+        {
+            // Item is currently expanded, collapse it
+            PostMessageW(hWndTV, TVM_EXPAND, TVE_COLLAPSE | TVE_COLLAPSERESET, reinterpret_cast<LPARAM>(hSelectedItem));
+            // Item is currently collapsed, expand it with a delay
+            SetTimer(hWnd, IDT_DELAYED_EXPAND, 0, NULL);
+        }
+        else
+        {
+            // Item is currently collapsed, expand it
+            TreeView_Expand(hWndTV, hSelectedItem, TVE_EXPAND);
+        }
+    }
 }
 
 // Функция обновляет значения выбранного ключа реестра
@@ -2239,6 +2254,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                             {
                                 DeleteKey();
                             }
+
                             break;
                         }
 
@@ -2295,11 +2311,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                                 DeleteValues();
                             }
 
-                            // Если нажата клавиша F5
-                            else if (pnkd->wVKey == VK_F5)
-                            {
-                                UpdateListView();
-							}
                             break;
                         }
 
@@ -2320,13 +2331,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
                             break;
                         }
-
                     }
                     break;
                 }
                 default:
                     break;
             }
+        }
+        case WM_TIMER:
+        {
+            // Таймер для задержки раскрытия ключа
+            if (wParam == IDT_DELAYED_EXPAND)
+            {
+                // Получить дескриптор выбранного элемента
+                HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
+                if (hSelectedItem)
+                {
+                    // Элемент выбран, раскрыть его
+                    TreeView_Expand(hWndTV, hSelectedItem, TVE_EXPAND);
+                }
+                // Остановить таймер
+                KillTimer(hWnd, IDT_DELAYED_EXPAND);
+            }
+            break;
         }
         case WM_COMMAND:
         {
@@ -2411,8 +2438,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 // Обработка обновления элементов управления
                 case IDM_REFRESH:
                 {
-					UpdateListView();
-					UpdateTreeView();
+                    // Получить дескриптор элемента управления, имеющего фокус
+                    HWND hCtrl = GetFocus();
+
+                    // Если фокус на дереве, обновить дерево
+                    if (hCtrl == hWndTV)
+                    {
+                        UpdateTreeView();
+                    }
+
+                    // Если фокус на списке, обновить список
+                    else if (hCtrl == hWndLV)
+                    {
+                        UpdateListView();
+                    }
+
+                    // Если фокус на другом элементе, обновить все элементы
+                    else
+                    {
+                        UpdateTreeView();
+                        UpdateListView();
+                    }
                     break;
                 }
 
@@ -2482,8 +2528,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             MINMAXINFO* pMinMaxInfo = reinterpret_cast<MINMAXINFO*>(lParam);
             pMinMaxInfo->ptMinTrackSize.x = pMinMaxInfo->ptMaxTrackSize.x = 1025;
             pMinMaxInfo->ptMinTrackSize.y = pMinMaxInfo->ptMaxTrackSize.y = 725;
+            break;
         }
-        break;
         default:
             return DefWindowProc(hWnd, uMsg, wParam, lParam);
         }
