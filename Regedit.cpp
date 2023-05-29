@@ -14,7 +14,7 @@ HWND hWnd;									    // Main window handle
 HWND hWndTV; 								    // TreeView handle
 HWND hWndLV; 								    // ListView handle
 HWND hWndEV;								    // Main Edit handle
-HWND hFindDlg;								    // Find dialog handle
+HWND hSearchDlg;								// Threaded search dialog handle
 volatile bool bIsSearchCancelled = FALSE;       // Flag to cancel search
 
 // Functions declarations:
@@ -174,29 +174,29 @@ VOID ProcessTabKeyDown(MSG& msg, CONST HWND& hMainWnd)
         // Check the key code
         switch (msg.wParam)
         {
-        case VK_TAB:
-        {
-            // Check if Shift key is pressed
-            bool shiftPressed = GetKeyState(VK_SHIFT) < 0;
+            case VK_TAB:
+            {
+                // Check if Shift key is pressed
+                bool shiftPressed = GetKeyState(VK_SHIFT) < 0;
 
-            // Check the current focused control
-            HWND focusedWnd = GetFocus();
-            if (focusedWnd == GetDlgItem(hMainWnd, IDC_MAIN_EDIT))
-            {
-                // Main edit view is focused, switch to tree view
-                SetFocus(hWndTV);
+                // Check the current focused control
+                HWND focusedWnd = GetFocus();
+                if (focusedWnd == GetDlgItem(hMainWnd, IDC_MAIN_EDIT))
+                {
+                    // Main edit view is focused, switch to tree view
+                    SetFocus(hWndTV);
+                }
+                else if (focusedWnd == hWndTV)
+                {
+                    // Tree view is focused, switch to list view
+                    SetFocus(hWndLV);
+                }
+                else if (focusedWnd == hWndLV)
+                {
+                    // List view is focused, switch back to main edit view
+                    SetFocus(GetDlgItem(hMainWnd, IDC_MAIN_EDIT));
+                }
             }
-            else if (focusedWnd == hWndTV)
-            {
-                // Tree view is focused, switch to list view
-                SetFocus(hWndLV);
-            }
-            else if (focusedWnd == hWndLV)
-            {
-                // List view is focused, switch back to main edit view
-                SetFocus(GetDlgItem(hMainWnd, IDC_MAIN_EDIT));
-            }
-        }
         }
     }
 }
@@ -259,7 +259,7 @@ VOID __cdecl SearchThreadFunc(void* pArguments)
         HKEY hRootKey = GetHKEYFromString(szRootKeyName);
 
         LPWSTR pszFoundPath = SearchRegistry(hRootKey, szSubKeyPath, pSearchData->szSearchTerm, pSearchData->bSearchKeys, pSearchData->bSearchValues);
-        if (pszFoundPath != NULL)
+        if (pszFoundPath)
         {
             if (lstrcmp(szFullPath, szRootKeyName) == 0)
             {
@@ -281,7 +281,7 @@ VOID __cdecl SearchThreadFunc(void* pArguments)
 
             return;
         }
-        else if (pszFoundPath == NULL && !bIsSearchCancelled)
+        else if (!pszFoundPath && !bIsSearchCancelled)
         {
             // Don't forget to free the memory allocated by SearchRegistry!
             delete[] pszFoundPath;
@@ -308,7 +308,7 @@ VOID __cdecl SearchThreadFunc(void* pArguments)
     }
 
     // Clean up and close the "search ongoing" dialog when done
-    SendMessage(hFindDlg, WM_CLOSE, 0, 0);
+    SendMessageW(hSearchDlg, WM_CLOSE, 0, 0);
 
     free(pSearchData);
 }
@@ -395,20 +395,21 @@ CONST WCHAR* RegDataToString(CONST BYTE* data, CONST DWORD dwType, CONST DWORD d
 
     // This is a simple example which only converts string and DWORD types. 
     // Other types may need additional handling.
-    switch (dwType) {
-    case REG_SZ:
-    case REG_EXPAND_SZ:
-        wcscpy_s(buffer, MAX_VALUE_NAME, (LPWSTR)data);
-        break;
-    case REG_DWORD:
+    switch (dwType)
     {
-        DWORD dwValue = *(DWORD*)data;
-        swprintf_s(buffer, MAX_VALUE_NAME, L"%lu", dwValue);
-        break;
-    }
-    default:
-        wcscpy_s(buffer, MAX_VALUE_NAME, L"");
-        break;
+        case REG_SZ:
+        case REG_EXPAND_SZ:
+            wcscpy_s(buffer, MAX_VALUE_NAME, (LPWSTR)data);
+            break;
+        case REG_DWORD:
+        {
+            DWORD dwValue = *(DWORD*)data;
+            swprintf_s(buffer, MAX_VALUE_NAME, L"%lu", dwValue);
+            break;
+        }
+        default:
+            wcscpy_s(buffer, MAX_VALUE_NAME, L"");
+            break;
     }
 
     return buffer;
@@ -419,7 +420,7 @@ VOID SeparateFullPath(WCHAR szFullPath[MAX_PATH], WCHAR szRootKeyName[MAX_ROOT_K
 {
     // Separate the root key name from the subkey path.
     WCHAR* p = wcschr(szFullPath, L'\\');
-    if (p == NULL)
+    if (!p)
     {
         // Handle case where no backslash found (full path is just the root key name)
         wcscpy_s(szRootKeyName, MAX_ROOT_KEY_LENGTH, szFullPath);
@@ -638,6 +639,8 @@ VOID CreateTestKeysAndValues()
 
     MessageBoxW(hWnd, L"Test keys and values are added successfully", L"Success", MB_OK | MB_ICONINFORMATION);
 
+    SetFocus(hWndTV);
+
     ExpandTreeViewToPath(L"HKEY_CURRENT_USER\\SOFTWARE\\1test_key");
 }
 
@@ -706,7 +709,7 @@ VOID ExpandTreeViewToPath(CONST WCHAR* pszPath)
 
     HTREEITEM hCurrentItem = TreeView_GetRoot(hWndTV);
 
-    while (pSegment != NULL && hCurrentItem != NULL)
+    while (pSegment && hCurrentItem)
     {
         // Check if the current segment matches the item text
         WCHAR szItemText[MAX_PATH] = { 0 };
@@ -725,14 +728,14 @@ VOID ExpandTreeViewToPath(CONST WCHAR* pszPath)
             // Get the next segment
             pSegment = wcstok_s(NULL, L"\\", &pContext);
 
-            if (pSegment == NULL)
+            if (!pSegment)
             {
                 // Select the last item
                 TreeView_SelectItem(hWndTV, hCurrentItem);
                 TreeView_EnsureVisible(hWndTV, hCurrentItem);
 
                 HTREEITEM hSelected = TreeView_GetSelection(hWndTV);
-                if (hSelected != NULL)
+                if (hSelected)
                 {
                     // Get the associated data of the selected item (if any)
                     TVITEMW item;
@@ -742,7 +745,7 @@ VOID ExpandTreeViewToPath(CONST WCHAR* pszPath)
                     PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)item.lParam;
 
                     // Show the key from the registry by the address
-                    if (pNodeInfo != NULL)
+                    if (pNodeInfo)
                     {
                         HKEY hParentKey = GetHKEYFromString(pNodeInfo->hKey);
                         const WCHAR* szSubKeyPath = pNodeInfo->szPath;
@@ -762,7 +765,7 @@ VOID ExpandTreeViewToPath(CONST WCHAR* pszPath)
 
             // Get the child item that matches the next segment
             hCurrentItem = TreeView_GetChild(hWndTV, hCurrentItem);
-            while (hCurrentItem != NULL)
+            while (hCurrentItem)
             {
                 TVITEMW tvChildItem;
                 tvChildItem.mask = TVIF_TEXT;
@@ -953,7 +956,7 @@ INT_PTR OnKeyExpand(CONST LPARAM& lParam)
         {
             // If the item already has children, skip loading them again
             HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hItem);
-            if (hChildItem != NULL)
+            if (hChildItem)
             {
                 return FALSE;
             }
@@ -1018,6 +1021,8 @@ INT_PTR OnKeyExpand(CONST LPARAM& lParam)
             return TRUE;
         }
     }
+
+    return FALSE;
 }
 
 // User clicks on the "Delete" button
@@ -1043,7 +1048,7 @@ INT_PTR OnColumnClickEx(CONST LPARAM& lParam)
 INT_PTR OnEndLabelEditKeyEx(CONST LPARAM& lParam)
 {
     LPNMTVDISPINFOW pTVInfo = (LPNMTVDISPINFOW)lParam;
-    if (pTVInfo->item.pszText != NULL)
+    if (pTVInfo->item.pszText)
     {
 		PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)pTVInfo->item.lParam;
 		HKEY hKey = GetHKEYFromString(pNodeInfo->hKey);
@@ -1169,7 +1174,7 @@ LPWSTR SearchRegistry(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wst
     // First, perform the usual recursive search in the selected key
     LPWSTR pszFoundPath = SearchRegistryRecursive(hKeyRoot, keyPath, searchTerm, bSearchKeys, bSearchValues);
     
-    if (pszFoundPath != nullptr)
+    if (pszFoundPath)
     {
         return pszFoundPath;
     }
@@ -1191,7 +1196,7 @@ LPWSTR SearchRegistry(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST std::wst
         }
     }
 
-    PostMessageW(hFindDlg, WM_DESTROY, 0, 0);
+    PostMessageW(hSearchDlg, WM_DESTROY, 0, 0);
 
     // No match found
     return nullptr;
@@ -1209,7 +1214,7 @@ LPWSTR SearchRegistryRecursive(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST
     if (RegOpenKeyExW(hKeyRoot, keyPath.c_str(), 0, KEY_READ, &hKey) != ERROR_SUCCESS)
     {
         // Handle key not found or open failure
-        return NULL;
+        return nullptr;
     }
 
     // Search for values
@@ -1236,7 +1241,7 @@ LPWSTR SearchRegistryRecursive(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST
                 // Close the opened key
                 RegCloseKey(hKey);
 
-                PostMessageW(hFindDlg, WM_DESTROY, 0, 0);
+                PostMessageW(hSearchDlg, WM_DESTROY, 0, 0);
 
                 return _wcsdup(keyPath.c_str());
             }
@@ -1274,7 +1279,7 @@ LPWSTR SearchRegistryRecursive(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST
                 // Close the opened key
                 RegCloseKey(hKey);
 
-                PostMessageW(hFindDlg, WM_DESTROY, 0, 0);
+                PostMessageW(hSearchDlg, WM_DESTROY, 0, 0);
 
                 return _wcsdup(fullPath.c_str());
             }
@@ -1311,7 +1316,7 @@ LPWSTR SearchRegistryRecursive(HKEY hKeyRoot, CONST std::wstring& keyPath, CONST
                 // Close the opened key
                 RegCloseKey(hKey);
 
-                PostMessageW(hFindDlg, WM_DESTROY, 0, 0);
+                PostMessageW(hSearchDlg, WM_DESTROY, 0, 0);
 
                 return pszFoundPath;
             }
@@ -1334,7 +1339,7 @@ VOID ShowKeyMenu()
 {
     // Create the context menu
     HMENU hContextMenu = CreatePopupMenu();
-    if (hContextMenu != NULL)
+    if (hContextMenu)
     {
         HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
         // Add the menu items
@@ -1554,7 +1559,7 @@ VOID RenameKey()
 {
     // Get the selected item in the list view
     HTREEITEM hSelected = TreeView_GetSelection(hWndTV);
-    if (hSelected != NULL)
+    if (hSelected)
     {
         TreeView_EditLabel(hWndTV, hSelected);
     }
@@ -1567,7 +1572,7 @@ VOID DeleteKey()
     HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
 
     // Delete the key associated with the selected item from the registry
-    if (hSelectedItem != NULL)
+    if (hSelectedItem)
     {
         INT_PTR nRet = 0;
         // Display a confirmation dialog box before deleting the key.
@@ -1582,7 +1587,7 @@ VOID DeleteKey()
             PTREE_NODE_INFO pNodeInfo = (PTREE_NODE_INFO)item.lParam;
 
             // Delete the key from the registry
-            if (pNodeInfo != NULL)
+            if (pNodeInfo)
             {
                 HKEY hParentKey = GetHKEYFromString(pNodeInfo->hKey);
                 const WCHAR* szSubKeyPath = pNodeInfo->szPath;
@@ -1612,6 +1617,9 @@ VOID DeleteKey()
             }
         }
     }
+
+    // Set the focus back to the tree view
+    SetFocus(hWndTV);
 }
 
 // Inserts a new value into the registry
@@ -1761,6 +1769,9 @@ VOID ModifyValue()
         // Delete the dynamically allocated memory
         delete[] szValueName;
     }
+
+    // Set the focus to the list view
+    SetFocus(hWndLV);
 }
 
 // Renames the selected key in the list view
@@ -1787,7 +1798,7 @@ CONST DWORD RenameRegValue(CONST HKEY& hKey, CONST WCHAR* szOldValueName, CONST 
     {
 		// Allocate memory for the data
 		lpData = (LPBYTE)malloc(dwDataSize);
-        if (lpData != NULL)
+        if (lpData)
         {
 			// Get the data
 			dwResult = RegQueryValueExW(hKey, szOldValueName, NULL, &dwType, lpData, &dwDataSize);
@@ -1876,6 +1887,10 @@ VOID DeleteValues()
             }
         }
     }
+
+    // Set the focus to the list view first item
+    ListView_SetItemState(hWndLV, 0, LVIS_FOCUSED | LVIS_SELECTED, 0x000F);
+    SetFocus(hWndLV);
 }
 
 // Cleans up the resources used by the treeview
@@ -2036,6 +2051,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 case IDM_DELETE_KEY:
                 {
                     DeleteKey();
+
                     break;
                 }
                 case IDM_RENAME_KEY:
@@ -2199,10 +2215,10 @@ INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
                     EndDialog(hDlg, LOWORD(wParam));
 
-                    hFindDlg = CreateDialogW(hInst, MAKEINTRESOURCE(IDD_SEARCH), hWnd, SearchDlgProc);
-                    if (hFindDlg != NULL)
+                    hSearchDlg = CreateDialogW(hInst, MAKEINTRESOURCE(IDD_SEARCH), hWnd, SearchDlgProc);
+                    if (hSearchDlg != NULL)
                     {
-                        ShowWindow(hFindDlg, SW_SHOW);
+                        ShowWindow(hSearchDlg, SW_SHOW);
                     }
 
                     HANDLE hThread = (HANDLE)_beginthread(SearchThreadFunc, 0, pSearchData);
@@ -2229,6 +2245,9 @@ INT_PTR CALLBACK FindDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 case IDCANCEL:
                 {
                     EndDialog(hDlg, LOWORD(wParam));
+
+                    SetFocus(hWndTV);
+
                     return TRUE;
                 }
             }
@@ -2277,9 +2296,13 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
             {
                 case IDCANCEL:
                 {
-                    bIsSearchCancelled = true;  // set the cancellation flag
+                    SetFocus(hWndTV);
+
                     DestroyWindow(hDlg);
                     hDlg = NULL;
+
+                    bIsSearchCancelled = true;  // set the cancellation flag
+
                     break;
                 }
             }
@@ -2289,8 +2312,12 @@ INT_PTR CALLBACK SearchDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
         {
             // Stop the timer
             KillTimer(hDlg, 1);
+
             DestroyWindow(hDlg);
             hDlg = NULL;
+
+            SetFocus(hWndTV);
+
             break;
         }
         default:
@@ -2352,6 +2379,9 @@ INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
                     delete[] szData;
 
                     EndDialog(hDlg, LOWORD(wParam));
+
+                    SetFocus(hWndLV);
+
                     return TRUE;
                 }
                 break;
@@ -2359,6 +2389,9 @@ INT_PTR CALLBACK EditStringDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
                 case IDCANCEL:
                 {
                     EndDialog(hDlg, IDCANCEL);
+
+                    SetFocus(hWndLV);
+
                     return TRUE;
                 }
                 break;
@@ -2420,7 +2453,10 @@ INT_PTR CALLBACK EditDwordDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
                         {
                             // Refresh the list view with the updated values
                             PopulateListView(hKey);
+
                             EndDialog(hDlg, IDOK);
+
+                            SetFocus(hWndLV);
                         }
                         else
                         {
@@ -2433,12 +2469,16 @@ INT_PTR CALLBACK EditDwordDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lP
                         // Handle error
                         MessageBox(hDlg, L"Invalid value.", NULL, MB_ICONERROR | MB_OK);
                     }
+
                     return TRUE;
                 }
 
                 case IDCANCEL:
                 {
                     EndDialog(hDlg, IDCANCEL);
+
+                    SetFocus(hWndLV);
+
                     return TRUE;
                 }
             }
@@ -2462,6 +2502,9 @@ INT_PTR CALLBACK About(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
         if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
         {
             EndDialog(hDlg, LOWORD(wParam));
+
+            SetFocus(hWndTV);
+
             return TRUE;
         }
         break;
