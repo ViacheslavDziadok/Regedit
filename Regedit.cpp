@@ -1068,15 +1068,7 @@ INT_PTR OnKeyExpand(CONST LPARAM& lParam)
             // Если ключ имеет дочерние элементы, то пропустить его загрузку в дерево и выйти из функции
             HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hItem);
 
-            NMHDR* pnmhdr = (NMHDR*)lParam;
-            NMTREEVIEWW* pnmtv = (NMTREEVIEWW*)pnmhdr;
-            // Если действие - раскрытие элемента дерева и у него есть дочерние элементы
-            if ((pnmtv->action == TVE_EXPAND) && hChildItem)
-            {
-                return FALSE;
-            }
-            // Если действие - сворачивание элемента дерева и у него есть дочерние элементы
-            else if (hChildItem)
+            if (hChildItem)
             {
                 return FALSE;
             }
