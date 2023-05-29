@@ -642,6 +642,8 @@ VOID CreateTestKeysAndValues()
 
     SetFocus(hWndTV);
 
+    UpdateTreeView();
+
     ExpandTreeViewToPath(L"HKEY_CURRENT_USER\\SOFTWARE\\1test_key");
 }
 
