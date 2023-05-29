@@ -464,6 +464,7 @@ UINT CompareValueNamesEx(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort)
 }
 
 
+
 // Constructors
 
 // Address Bar
@@ -958,6 +959,7 @@ INT_PTR OnKeyExpand(CONST LPARAM& lParam)
             HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hItem);
             if (hChildItem)
             {
+                PostMessageW(hWndTV, TVM_EXPAND, TVE_COLLAPSE | TVE_COLLAPSERESET, reinterpret_cast<LPARAM>(hItem));
                 return FALSE;
             }
 
