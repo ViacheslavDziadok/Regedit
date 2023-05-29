@@ -1078,7 +1078,6 @@ INT_PTR OnKeyExpand(CONST LPARAM& lParam)
             // Если действие - сворачивание элемента дерева и у него есть дочерние элементы
             else if (hChildItem)
             {
-                PostMessageW(hWndTV, TVM_EXPAND, TVE_COLLAPSE | TVE_COLLAPSERESET, reinterpret_cast<LPARAM>(hItem));
                 return FALSE;
             }
 

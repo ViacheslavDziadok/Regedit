@@ -33,7 +33,7 @@ CAPTION "О программе Regedit"
 FONT 8, "MS Shell Dlg", 0, 0, 1
 {
     DEFPUSHBUTTON   "ОК", IDOK, 113, 41, 50, 14, WS_GROUP, WS_EX_LEFT
-    ICON            IDI_SMALL, IDC_STATIC, 8, 10, 30, 30, SS_ICON | SS_REALSIZECONTROL, WS_EX_LEFT
+    ICON            IDI_REGEDIT, IDC_STATIC, 8, 10, 30, 30, SS_ICON | SS_REALSIZECONTROL, WS_EX_LEFT
     LTEXT           "Regedit, Версия 1.0", IDC_STATIC, 42, 14, 66, 9, SS_LEFT | SS_NOPREFIX, WS_EX_LEFT
     LTEXT           "Абдулова Айжан (c) 2023", IDC_STATIC, 42, 26, 112, 9, SS_LEFT, WS_EX_LEFT
 }
