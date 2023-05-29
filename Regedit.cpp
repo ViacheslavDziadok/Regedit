@@ -704,6 +704,9 @@ VOID CreateTestKeysAndValues()
     // Установить фокус на дереве
     SetFocus(hWndTV);
 
+    // Обновить дерево
+    UpdateTreeView();
+
     // Раскрыть дерево до тестового ключа
     ExpandTreeViewToPath(L"HKEY_CURRENT_USER\\SOFTWARE\\1test_key");
 }
