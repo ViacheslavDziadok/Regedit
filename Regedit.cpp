@@ -1259,7 +1259,7 @@ INT_PTR OnEndLabelEditValueEx(CONST LPARAM& lParam)
         // Если значение с таким именем уже существует, вывести сообщение об ошибке
         if (isDuplicate)
         {
-            MessageBox(hWnd, L"Название значения уже существует!", L"Обнаружен дубль", MB_ICONERROR);
+            MessageBoxW(hWnd, L"Название значения уже существует!", L"Обнаружен дубль", MB_ICONERROR);
 
             // Освободить память
             delete[] szValueName;
@@ -1301,7 +1301,7 @@ INT_PTR OnEndLabelEditValueEx(CONST LPARAM& lParam)
     // Ошибка переименования
     else
     {
-        MessageBox(hWnd, L"Название значения не может быть пустым!", L"Ошибка переименования", MB_ICONERROR);
+        MessageBoxW(hWnd, L"Название значения не может быть пустым!", L"Ошибка переименования", MB_ICONERROR);
 
         // Вернуть FALSE, чтобы отменить изменение
         return FALSE;
@@ -2304,7 +2304,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                         // Обработка изменения названия значения
                         case LVN_ENDLABELEDIT:
                         {
-                            return OnEndLabelEditValueEx(lParam);
+                            OnEndLabelEditValueEx(lParam);
+                            UpdateListView();
                             break;
                         }
 
