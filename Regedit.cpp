@@ -974,16 +974,8 @@ INT_PTR OnKeyExpand(CONST LPARAM& lParam)
         {
             // If the item already has children, skip loading them again
             HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hItem);
-
-            NMHDR* pnmhdr = (NMHDR*)lParam;
-            NMTREEVIEWW* pnmtv = (NMTREEVIEWW*)pnmhdr;
             
-            if ((pnmtv->action == TVE_EXPAND) && hChildItem)
-            {
-                return FALSE;
-            }
-            
-            else if (hChildItem)
+            if (hChildItem)
             {
                 return FALSE;
             }
