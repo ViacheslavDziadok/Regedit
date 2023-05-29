@@ -868,21 +868,22 @@ VOID ExpandTreeViewToPath(CONST WCHAR* pszPath)
 // Функция обновляет отображаемый ключ реестра в дереве через поле с полным путем
 VOID UpdateTreeView()
 {
-    // Retrieve the currently selected item
+    // Получить выбранный элемент дерева
     HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
     if (hSelectedItem)
     {
         BOOL isExpanded = TreeView_GetItemState(hWndTV, hSelectedItem, TVIS_EXPANDED) & TVIS_EXPANDED;
         if (isExpanded)
         {
-            // Item is currently expanded, collapse it
+            // Элемент раскрыт, свернуть его
             PostMessageW(hWndTV, TVM_EXPAND, TVE_COLLAPSE | TVE_COLLAPSERESET, reinterpret_cast<LPARAM>(hSelectedItem));
-            // Item is currently collapsed, expand it with a delay
+
+            // Ставим минимальный таймер, чтобы обновление произошло после схлопывания элемента
             SetTimer(hWnd, IDT_DELAYED_EXPAND, 0, NULL);
         }
         else
         {
-            // Item is currently collapsed, expand it
+            // Элемент свернут, раскрыть его
             TreeView_Expand(hWndTV, hSelectedItem, TVE_EXPAND);
         }
     }
