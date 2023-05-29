@@ -1048,7 +1048,16 @@ INT_PTR OnKeyExpand(CONST LPARAM& lParam)
         {
             // Если ключ имеет дочерние элементы, то пропустить его загрузку в дерево и выйти из функции
             HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hItem);
-            if (hChildItem)
+
+            NMHDR* pnmhdr = (NMHDR*)lParam;
+            NMTREEVIEWW* pnmtv = (NMTREEVIEWW*)pnmhdr;
+            // Если действие - раскрытие элемента дерева и у него есть дочерние элементы
+            if ((pnmtv->action == TVE_EXPAND) && hChildItem)
+            {
+                return FALSE;
+            }
+            // Если действие - сворачивание элемента дерева и у него есть дочерние элементы
+            else if (hChildItem)
             {
                 PostMessageW(hWndTV, TVM_EXPAND, TVE_COLLAPSE | TVE_COLLAPSERESET, reinterpret_cast<LPARAM>(hItem));
                 return FALSE;
@@ -1276,7 +1285,7 @@ INT_PTR OnEndLabelEditValueEx(CONST LPARAM& lParam)
             // Переименовать значение
             if (RenameRegValue(hKey, szOldValueName, pLVDispInfo->item.pszText) == ERROR_SUCCESS)
             {
-                // Обновить адрес в элементе дерева
+                // Заполнить список значений
                 PopulateListView(hKey);
             }
 
@@ -2250,7 +2259,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                         // Обработка изменения названия ключа
                         case TVN_ENDLABELEDIT:
                         {
-                            return OnEndLabelEditKeyEx(lParam);
+                            OnEndLabelEditKeyEx(lParam);
+                            // Обновить ListView
+                            UpdateListView();
+
                             break;
                         }
                     }
@@ -2305,7 +2317,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                         case LVN_ENDLABELEDIT:
                         {
                             OnEndLabelEditValueEx(lParam);
-                            UpdateListView();
                             break;
                         }
 
