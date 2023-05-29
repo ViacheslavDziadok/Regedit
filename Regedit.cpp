@@ -2115,8 +2115,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 }
                 case IDM_REFRESH:
                 {
-					UpdateListView();
-					UpdateTreeView();
+                    // Get the handle of the control that has the focus
+                    HWND hCtrl = GetFocus();
+
+                    // Focus on the treeview -> update the treeview
+                    if (hCtrl == hWndTV)
+                    {
+                        UpdateTreeView();
+                    }
+
+                    // Focus on the listview -> update the listview
+                    else if (hCtrl == hWndLV)
+                    {
+                        UpdateListView();
+                    }
+
+                    // Focus on smth else -> update both
+                    else
+                    {
+                        UpdateTreeView();
+                        UpdateListView();
+                    }
                     break;
                 }
                 case IDM_TEST:
@@ -2196,8 +2215,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             MINMAXINFO* pMinMaxInfo = reinterpret_cast<MINMAXINFO*>(lParam);
             pMinMaxInfo->ptMinTrackSize.x = pMinMaxInfo->ptMaxTrackSize.x = 1025;
             pMinMaxInfo->ptMinTrackSize.y = pMinMaxInfo->ptMaxTrackSize.y = 725;
+            break;
         }
-        break;
         default:
             return DefWindowProc(hWnd, uMsg, wParam, lParam);
         }
