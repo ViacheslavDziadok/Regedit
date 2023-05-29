@@ -957,7 +957,16 @@ INT_PTR OnKeyExpand(CONST LPARAM& lParam)
         {
             // If the item already has children, skip loading them again
             HTREEITEM hChildItem = TreeView_GetChild(hWndTV, hItem);
-            if (hChildItem)
+
+            NMHDR* pnmhdr = (NMHDR*)lParam;
+            NMTREEVIEWW* pnmtv = (NMTREEVIEWW*)pnmhdr;
+            
+            if ((pnmtv->action == TVE_EXPAND) && hChildItem)
+            {
+                return FALSE;
+            }
+            
+            else if (hChildItem)
             {
                 PostMessageW(hWndTV, TVM_EXPAND, TVE_COLLAPSE | TVE_COLLAPSERESET, reinterpret_cast<LPARAM>(hItem));
                 return FALSE;
@@ -2015,7 +2024,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                         }
                         case LVN_ENDLABELEDIT:
                         {
-                            return OnEndLabelEditValueEx(lParam);
+                            OnEndLabelEditValueEx(lParam);
+
+                            UpdateListView();
+
                             break;
                         }
 
