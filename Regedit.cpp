@@ -2259,10 +2259,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                         // Обработка изменения названия ключа
                         case TVN_ENDLABELEDIT:
                         {
-                            OnEndLabelEditKeyEx(lParam);
-                            // Обновить ListView
-                            UpdateListView();
-
+                            return OnEndLabelEditKeyEx(lParam);
                             break;
                         }
                     }
@@ -2317,6 +2314,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                         case LVN_ENDLABELEDIT:
                         {
                             OnEndLabelEditValueEx(lParam);
+
+                            // Обновить ListView
+                            UpdateListView();
+
                             break;
                         }
 
