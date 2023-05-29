@@ -125,10 +125,11 @@ IDC_REGEDIT ACCELERATORS
 {
     "?",            IDM_ABOUT, ASCII, ALT
     "/",            IDM_ABOUT, ASCII, ALT
-    VK_F1,         IDD_FIND, VIRTKEY
-    "q",            IDM_EXIT, ASCII, ALT
-    VK_F5,         IDM_REFRESH, VIRTKEY
-    VK_F12,        IDM_TEST, VIRTKEY
+    "a",            IDM_ABOUT, ASCII, CONTROL, VIRTKEY
+    "f",            IDD_FIND, ASCII, CONTROL, VIRTKEY
+    "q",            IDM_EXIT, ASCII, CONTROL, VIRTKEY
+    VK_F5,          IDM_REFRESH, VIRTKEY
+    VK_F12,         IDM_TEST, VIRTKEY
 }
 
 
