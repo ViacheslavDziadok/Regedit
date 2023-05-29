@@ -42,3 +42,4 @@
 #define IDM_CREATE_DWORD_VALUE                  906
 #define IDM_REFRESH                             1000
 #define IDM_TEST                                2000
+#define IDT_DELAYED_EXPAND						9000

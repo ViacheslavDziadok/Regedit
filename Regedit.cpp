@@ -2135,6 +2135,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
             }
             break;
         }
+        case WM_TIMER:
+        {
+            // Timer for delayed expand
+            if (wParam == IDT_DELAYED_EXPAND)
+            {
+                // Get the selected item
+                HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
+                if (hSelectedItem)
+                {
+                    // Expand the item
+                    TreeView_Expand(hWndTV, hSelectedItem, TVE_EXPAND);
+                }
+                // Stop the timer
+                KillTimer(hWnd, IDT_DELAYED_EXPAND);
+            }
+            break;
+        }
         case WM_CONTEXTMENU:
         {
             if ((HWND)wParam == hWndLV) 
