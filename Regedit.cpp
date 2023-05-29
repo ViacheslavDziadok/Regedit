@@ -853,9 +853,24 @@ VOID PopulateListView(CONST HKEY& hKey)
 // Refreshes the tree view
 VOID UpdateTreeView()
 {
-    WCHAR szFullPath[MAX_PATH];
-    GetDlgItemText(hWnd, IDC_MAIN_EDIT, szFullPath, MAX_PATH);
-    ExpandTreeViewToPath(szFullPath);
+    // Retrieve the currently selected item
+    HTREEITEM hSelectedItem = TreeView_GetSelection(hWndTV);
+    if (hSelectedItem)
+    {
+        BOOL isExpanded = TreeView_GetItemState(hWndTV, hSelectedItem, TVIS_EXPANDED) & TVIS_EXPANDED;
+        if (isExpanded)
+        {
+            // Item is currently expanded, collapse it
+            PostMessageW(hWndTV, TVM_EXPAND, TVE_COLLAPSE | TVE_COLLAPSERESET, reinterpret_cast<LPARAM>(hSelectedItem));
+            // Item is currently collapsed, expand it with a delay
+            SetTimer(hWnd, IDT_DELAYED_EXPAND, 0, NULL);
+        }
+        else
+        {
+            // Item is currently collapsed, expand it
+            TreeView_Expand(hWndTV, hSelectedItem, TVE_EXPAND);
+        }
+    }
 }
 
 // Refreshes the list view
