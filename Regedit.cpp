@@ -1119,6 +1119,8 @@ INT_PTR OnKeyExpand(CONST LPARAM& lParam)
             return TRUE;
         }
     }
+
+    return FALSE;
 }
 
 // Функция сортировки элементов ListView
